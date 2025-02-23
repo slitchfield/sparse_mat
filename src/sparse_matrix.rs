@@ -37,12 +37,30 @@ impl SparseMatrix {
     }
 
     #[allow(dead_code)]
+    fn insert_triplets(&mut self, triplets: Vec<(u64, u64, f64)>) {
+        for (row, col, val) in triplets.iter() {
+            assert!(*row < self.shape.0);
+            assert!(*col < self.shape.1);
+
+            self.values.insert((*row, *col), *val);
+        }
+    }
+
+    #[allow(dead_code)]
     fn clear_at(&mut self, row: u64, col: u64) -> Option<f64> {
         // TODO: return result with oob error instead
         assert!(row < self.shape.0);
         assert!(col < self.shape.1);
 
         self.values.remove(&(row, col))
+    }
+
+    #[allow(dead_code)]
+    fn peek_at(&self, row: u64, col: u64) -> Option<f64> {
+        assert!(row < self.shape.0);
+        assert!(col < self.shape.1);
+
+        self.values.get(&(row, col)).copied()
     }
 }
 
@@ -70,6 +88,15 @@ mod tests {
     }
 
     #[test]
+    fn sparsemat_insert_triplets() {
+        let mut local = sparse_matrix::SparseMatrix::empty_with_shape(3, 3);
+        local.insert_triplets(vec![(0, 0, 1.0), (1, 1, 2.0), (2, 2, 3.0)]);
+        assert!(local.peek_at(0, 0) == Some(1.0));
+        assert!(local.peek_at(1, 1) == Some(2.0));
+        assert!(local.peek_at(2, 2) == Some(3.0));
+    }
+
+    #[test]
     fn sparsemat_remove() {
         let mut local = sparse_matrix::SparseMatrix::empty_with_shape(3, 3);
         local.insert(0, 0, 1.0);
@@ -82,5 +109,23 @@ mod tests {
 
         let output = local.clear_at(1, 1);
         assert!(output.is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "assertion failed")]
+    fn sparsemat_remove_oob() {
+        let mut local = sparse_matrix::SparseMatrix::empty_with_shape(3, 3);
+
+        let _ = local.clear_at(4, 4);
+    }
+
+    #[test]
+    fn sparsemat_peek() {
+        let mut local = sparse_matrix::SparseMatrix::empty_with_shape(3, 3);
+
+        local.insert_triplets(vec![(0, 0, 1.0), (1, 1, 2.0), (2, 2, 3.0)]);
+
+        assert!(local.peek_at(0, 0) == Some(1.0));
+        assert!(local.peek_at(0, 1).is_none());
     }
 }
