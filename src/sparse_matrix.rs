@@ -82,7 +82,7 @@ impl SparseMatrix {
     }
 
     #[allow(dead_code)]
-    fn iter(&self) -> RowIterator {
+    fn row_iter(&self) -> RowIterator {
         RowIterator {
             matrix: self,
             row_iter_idx: 0,
@@ -187,7 +187,29 @@ impl SparseMatrix {
 use std::fmt;
 impl fmt::Display for SparseMatrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "shape: ({}, {})", self.shape.0, self.shape.1)
+        let inner_line_width = 8 * self.shape.1; // 6 chars per col + comma + space + leading space
+        write!(f, "\t/")?;
+        for _ in 0..inner_line_width {
+            write!(f, " ")?;
+        }
+        writeln!(f, "\\")?;
+        // TODO: Account for variable number of digits in cols
+        for row in self.row_iter() {
+            write!(f, "\t| ")?;
+            for (idx, elem) in row.iter().enumerate() {
+                if idx != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{:>6.2}", elem)?; // TODO: dynamic precision based on longest values
+            }
+            writeln!(f, " |")?;
+        }
+        write!(f, "\t\\")?;
+        for _ in 0..inner_line_width {
+            write!(f, " ")?;
+        }
+        write!(f, "/")?;
+        writeln!(f)
     }
 }
 
@@ -226,7 +248,7 @@ mod tests {
 
         local._update_compressed();
 
-        for row in local.iter() {
+        for row in local.row_iter() {
             dbg!(row);
         }
     }
@@ -342,7 +364,7 @@ mod tests {
             (2, 4, 70.0),
             (3, 5, 80.0),
         ]);
-
-        println!("{}", local);
+        local._update_compressed();
+        println!("{}", local)
     }
 }
