@@ -127,6 +127,15 @@ impl SparseMatrix {
     }
 
     #[allow(dead_code)]
+    fn create_transpose(&self) -> SparseMatrix {
+        let mut local = SparseMatrix::empty_with_shape(self.shape.1, self.shape.0);
+        for ((row, col), val) in self.values.iter() {
+            local.insert(*col, *row, *val); // Deref okay due to elementary r, c, v types
+        }
+        local
+    }
+
+    #[allow(dead_code)]
     fn insert(&mut self, row: u64, col: u64, value: f64) {
         // TODO: return result with oob error instead
         assert!(row < self.shape.0);
@@ -171,7 +180,7 @@ impl SparseMatrix {
     }
 
     #[allow(dead_code)]
-    fn transpose(&mut self) {
+    fn transpose_inplace(&mut self) {
         // Naive impl, could do better
         self.shape = (self.shape.1, self.shape.0);
 
@@ -230,6 +239,35 @@ mod tests {
         assert!(local.peek_at(0, 0) == Some(1.0));
         assert!(local.peek_at(1, 1) == Some(1.0));
         assert!(local.peek_at(2, 2) == Some(1.0));
+    }
+
+    #[test]
+    fn sparsemat_transpose_creation() {
+        let mut local = sparse_matrix::SparseMatrix::empty_with_shape(4, 6);
+        local.insert_triplets(vec![
+            (0, 0, 10.0),
+            (0, 1, 20.0),
+            (1, 1, 30.0),
+            (2, 2, 50.0),
+            (1, 3, 40.0),
+            (2, 3, 60.0),
+            (2, 4, 70.0),
+            (3, 5, 80.0),
+        ]);
+
+        let local2 = local.create_transpose();
+        assert!(local2.shape == (6, 4));
+        assert!(local2.peek_at(0, 0) == Some(10.0));
+        assert!(local2.peek_at(0, 1).is_none());
+        assert!(local2.peek_at(1, 0) == Some(20.0));
+        assert!(local2.peek_at(1, 1) == Some(30.0));
+        assert!(local2.peek_at(2, 2) == Some(50.0));
+        assert!(local2.peek_at(3, 1) == Some(40.0));
+        assert!(local2.peek_at(1, 3).is_none());
+        assert!(local2.peek_at(3, 2) == Some(60.0));
+        assert!(local2.peek_at(2, 3).is_none());
+        assert!(local2.peek_at(4, 2) == Some(70.0));
+        assert!(local2.peek_at(5, 3) == Some(80.0));
     }
 
     #[test]
@@ -309,11 +347,11 @@ mod tests {
     }
 
     #[test]
-    fn sparsemat_transpose() {
+    fn sparsemat_transposeinplace() {
         let mut local = sparse_matrix::SparseMatrix::empty_with_shape(4, 4);
 
         local.insert_triplets(vec![(0, 0, 1.0), (1, 0, 2.0), (2, 2, 3.0), (2, 3, 4.0)]);
-        local.transpose();
+        local.transpose_inplace();
 
         assert!(local.peek_at(0, 0) == Some(1.0));
         assert!(local.peek_at(0, 1) == Some(2.0));
