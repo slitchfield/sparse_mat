@@ -105,6 +105,7 @@ impl SparseMatrix {
     #[allow(dead_code)]
     fn empty_with_shape(n: u64, m: u64) -> SparseMatrix {
         let mut value_map = HashMap::new();
+        // TODO: evaluate expected sparsity, add reservation for compressed reps
         value_map.reserve((n * m / 4) as usize);
         SparseMatrix {
             shape: (n, m),
@@ -222,8 +223,31 @@ impl fmt::Display for SparseMatrix {
     }
 }
 
+use std::ops::Add;
+
+impl<'a> Add for &'a SparseMatrix {
+    type Output = SparseMatrix;
+
+    fn add(self, other: &SparseMatrix) -> SparseMatrix {
+        assert!(self.shape == other.shape);
+        let mut local = SparseMatrix::empty_with_shape(self.shape.0, self.shape.1);
+
+        // TODO: Copy constructor?
+        for ((rself, cself), elemself) in self.values.iter() {
+            local.insert(*rself, *cself, *elemself);
+        }
+        for ((rother, cother), elemother) in other.values.iter() {
+            let existingval = local.peek_at(*rother, *cother).unwrap_or(0.0);
+            local.insert(*rother, *cother, existingval + *elemother);
+        }
+        local
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use sparse_matrix::SparseMatrix;
+
     use crate::*;
 
     #[test]
@@ -404,5 +428,28 @@ mod tests {
         ]);
         local._update_compressed();
         println!("{}", local)
+    }
+
+    #[test]
+    #[should_panic]
+    fn sparsemat_bad_addition() {
+        let local = SparseMatrix::empty_with_shape(3, 3);
+        let local2 = SparseMatrix::empty_with_shape(2, 2);
+
+        let _local3 = &local + &local2;
+    }
+
+    #[test]
+    fn sparsemat_good_addition() {
+        let mut local = sparse_matrix::SparseMatrix::empty_with_shape(3, 3);
+        local.insert_triplets(vec![(0, 0, 10.0), (0, 1, 20.0), (1, 1, 30.0), (2, 2, 50.0)]);
+        let local2 = local.create_transpose();
+
+        let local3 = &local + &local2;
+        assert!(local3.peek_at(0, 0) == Some(20.0));
+        assert!(local3.peek_at(0, 1) == Some(20.0));
+        assert!(local3.peek_at(1, 0) == Some(20.0));
+        assert!(local3.peek_at(1, 1) == Some(60.0));
+        assert!(local3.peek_at(2, 2) == Some(100.0));
     }
 }
