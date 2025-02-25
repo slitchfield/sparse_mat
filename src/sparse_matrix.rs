@@ -3,6 +3,7 @@ use std::collections::HashMap;
 /* Starting with Dictionary of Keys impl. To support efficient operations,
      should eventually move to compressed sparse row/col
 */
+#[derive(Clone)]
 struct SparseMatrix {
     shape: (u64, u64),
     values: HashMap<(u64, u64), f64>,
@@ -225,17 +226,13 @@ impl fmt::Display for SparseMatrix {
 
 use std::ops::Add;
 
-impl<'a> Add for &'a SparseMatrix {
+impl Add for &SparseMatrix {
     type Output = SparseMatrix;
 
     fn add(self, other: &SparseMatrix) -> SparseMatrix {
         assert!(self.shape == other.shape);
-        let mut local = SparseMatrix::empty_with_shape(self.shape.0, self.shape.1);
+        let mut local = self.clone();
 
-        // TODO: Copy constructor?
-        for ((rself, cself), elemself) in self.values.iter() {
-            local.insert(*rself, *cself, *elemself);
-        }
         for ((rother, cother), elemother) in other.values.iter() {
             let existingval = local.peek_at(*rother, *cother).unwrap_or(0.0);
             local.insert(*rother, *cother, existingval + *elemother);
