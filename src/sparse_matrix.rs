@@ -9,16 +9,29 @@ pub struct SparseMatrix {
     values: HashMap<(u64, u64), f64>,
 
     compressed_updated: bool,
-    pub compressed_rowarray: Vec<u64>,
-    pub compressed_colarray: Vec<u64>,
-    pub compressed_dataarray: Vec<f64>,
+    compressed_rowarray: Vec<u64>,
+    compressed_colarray: Vec<u64>,
+    compressed_dataarray: Vec<f64>,
+}
 
-    #[allow(dead_code)]
-    row_iter_idx: usize,
+/// Borrowed view of the matrix's cached CSR arrays.
+pub struct CsrView<'a> {
+    pub rows: &'a [u64],
+    pub cols: &'a [u64],
+    pub data: &'a [f64],
+}
+
+// Standalone CSR arrays, built without touching the matrix's cached copy
+struct Csr {
+    rows: Vec<u64>,
+    cols: Vec<u64>,
+    data: Vec<f64>,
 }
 
 pub struct RowIterator<'a> {
     matrix: &'a SparseMatrix,
+    // Only set when the matrix's cached CSR arrays are stale
+    owned: Option<Csr>,
     row_iter_idx: usize,
 }
 
@@ -27,13 +40,20 @@ impl Iterator for RowIterator<'_> {
     type Item = Vec<f64>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Check for compressed updates here?
         if self.row_iter_idx < self.matrix.shape.0 as usize {
-            let start = self.matrix.compressed_rowarray[self.row_iter_idx] as usize;
-            let end = self.matrix.compressed_rowarray[self.row_iter_idx + 1] as usize;
+            let (rows, cols, data) = match &self.owned {
+                Some(csr) => (&csr.rows, &csr.cols, &csr.data),
+                None => (
+                    &self.matrix.compressed_rowarray,
+                    &self.matrix.compressed_colarray,
+                    &self.matrix.compressed_dataarray,
+                ),
+            };
+            let start = rows[self.row_iter_idx] as usize;
+            let end = rows[self.row_iter_idx + 1] as usize;
 
-            let colslice = &self.matrix.compressed_colarray[start..end];
-            let dataslice = &self.matrix.compressed_dataarray[start..end];
+            let colslice = &cols[start..end];
+            let dataslice = &data[start..end];
 
             let mut retvec: Vec<f64> = vec![0.0; self.matrix.shape.1 as usize];
 
@@ -57,11 +77,7 @@ impl Default for SparseMatrix {
 }
 
 impl SparseMatrix {
-    fn _update_compressed(&mut self) {
-        self.compressed_rowarray.clear();
-        self.compressed_colarray.clear();
-        self.compressed_dataarray.clear();
-
+    fn build_csr(&self) -> Csr {
         // Create row vecs that we'll sort by col
         let mut row_vecs: Vec<Vec<(u64, f64)>> = vec![];
         for _ in 0..self.shape.0 {
@@ -75,15 +91,26 @@ impl SparseMatrix {
             row_vecs[rowidx as usize].sort_by_key(|a| a.0);
         }
 
-        self.compressed_rowarray.push(0);
+        let mut csr = Csr {
+            rows: vec![0],
+            cols: vec![],
+            data: vec![],
+        };
         for row in row_vecs {
             for (col, val) in row {
-                self.compressed_colarray.push(col);
-                self.compressed_dataarray.push(val);
+                csr.cols.push(col);
+                csr.data.push(val);
             }
-            self.compressed_rowarray
-                .push(self.compressed_dataarray.len() as u64);
+            csr.rows.push(csr.data.len() as u64);
         }
+        csr
+    }
+
+    fn _update_compressed(&mut self) {
+        let csr = self.build_csr();
+        self.compressed_rowarray = csr.rows;
+        self.compressed_colarray = csr.cols;
+        self.compressed_dataarray = csr.data;
 
         self.compressed_updated = true
     }
@@ -92,10 +119,31 @@ impl SparseMatrix {
         self._update_compressed();
     }
 
+    /// The cached CSR arrays, or `None` if they are stale (or were never built).
+    /// Call `explicitly_compress` to refresh them.
+    pub fn compressed(&self) -> Option<CsrView<'_>> {
+        if self.compressed_updated {
+            Some(CsrView {
+                rows: &self.compressed_rowarray,
+                cols: &self.compressed_colarray,
+                data: &self.compressed_dataarray,
+            })
+        } else {
+            None
+        }
+    }
+
+    // Call `explicitly_compress` first when iterating repeatedly; otherwise each
+    // iterator rebuilds the CSR arrays itself.
     #[allow(dead_code)]
     pub fn row_iter(&self) -> RowIterator<'_> {
         RowIterator {
             matrix: self,
+            owned: if self.compressed_updated {
+                None
+            } else {
+                Some(self.build_csr())
+            },
             row_iter_idx: 0,
         }
     }
@@ -109,7 +157,6 @@ impl SparseMatrix {
             compressed_rowarray: vec![],
             compressed_colarray: vec![],
             compressed_dataarray: vec![],
-            row_iter_idx: 0,
         }
     }
 
@@ -125,7 +172,6 @@ impl SparseMatrix {
             compressed_rowarray: vec![],
             compressed_colarray: vec![],
             compressed_dataarray: vec![],
-            row_iter_idx: 0,
         }
     }
 
