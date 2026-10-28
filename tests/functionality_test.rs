@@ -462,3 +462,115 @@ fn sparsemat_from_triplets_row_iter() {
     let rows: Vec<Vec<f64>> = local.row_iter().collect();
     assert!(rows == vec![vec![0.0, 0.0, 2.0], vec![2.0, 0.0, 0.0]]);
 }
+
+#[test]
+fn sparsemat_from_dense_basic() {
+    let local = SparseMatrix::from_dense(vec![vec![1.0, 0.0, 2.0], vec![0.0, 3.0, 0.0]]).unwrap();
+    assert!(local.shape == (2, 3));
+    assert!(local.peek_at(0, 0) == Ok(Some(1.0)));
+    assert!(local.peek_at(0, 2) == Ok(Some(2.0)));
+    assert!(local.peek_at(1, 1) == Ok(Some(3.0)));
+    assert!(local.num_nonzero() == 3);
+    assert!(local.compressed().is_none());
+}
+
+#[test]
+fn sparsemat_from_dense_skips_zeros() {
+    let local = SparseMatrix::from_dense(vec![vec![0.0, -0.0], vec![0.0, 5.0]]).unwrap();
+    assert!(local.peek_at(0, 0) == Ok(None));
+    assert!(local.peek_at(0, 1) == Ok(None));
+    assert!(local.num_nonzero() == 1);
+}
+
+#[test]
+fn sparsemat_from_dense_ragged() {
+    let result = SparseMatrix::from_dense(vec![vec![1.0, 2.0], vec![3.0], vec![4.0, 5.0]]);
+    assert!(
+        result.err()
+            == Some(SparseError::RaggedRows {
+                row: 1,
+                expected: 2,
+                found: 1
+            })
+    );
+}
+
+#[test]
+fn sparsemat_from_dense_empty() {
+    let local = SparseMatrix::from_dense(Vec::<Vec<f64>>::new()).unwrap();
+    assert!(local.shape == (0, 0));
+    assert!(local.num_nonzero() == 0);
+
+    // Rows with no columns are a valid n x 0 matrix
+    let local = SparseMatrix::from_dense(vec![vec![], vec![]]).unwrap();
+    assert!(local.shape == (2, 0));
+}
+
+#[test]
+fn sparsemat_from_dense_round_trip() {
+    let mut original = SparseMatrix::empty_with_shape(3, 4);
+    original
+        .insert_triplets(vec![(0, 0, 1.0), (1, 3, -2.0), (2, 1, 4.5)])
+        .unwrap();
+
+    let rebuilt = SparseMatrix::from_dense(original.row_iter()).unwrap();
+    assert!(rebuilt.shape == original.shape);
+    assert!(rebuilt.num_nonzero() == original.num_nonzero());
+    for (r, c, v) in [(0, 0, 1.0), (1, 3, -2.0), (2, 1, 4.5)] {
+        assert!(rebuilt.peek_at(r, c) == Ok(Some(v)));
+    }
+}
+
+#[test]
+fn sparsemat_from_dense_array_input() {
+    let local = SparseMatrix::from_dense([[1.0, 0.0], [0.0, 2.0]]).unwrap();
+    assert!(local.shape == (2, 2));
+    assert!(local.num_nonzero() == 2);
+}
+
+#[test]
+fn sparsemat_from_dense_nan_is_stored() {
+    let local = SparseMatrix::from_dense(vec![vec![f64::NAN, 0.0]]).unwrap();
+    assert!(local.num_nonzero() == 1);
+    assert!(local.peek_at(0, 0).unwrap().unwrap().is_nan());
+}
+
+#[test]
+fn sparsemat_to_dense_basic() {
+    let mut local = SparseMatrix::empty_with_shape(2, 3);
+    local
+        .insert_triplets(vec![(0, 2, 1.0), (1, 0, 2.0)])
+        .unwrap();
+    assert!(local.to_dense() == vec![vec![0.0, 0.0, 1.0], vec![2.0, 0.0, 0.0]]);
+}
+
+#[test]
+fn sparsemat_to_dense_matches_row_iter() {
+    let local =
+        SparseMatrix::from_triplets(3, 4, vec![(0, 0, 1.0), (2, 3, 4.0), (1, 1, -2.0)]).unwrap();
+    let rows: Vec<Vec<f64>> = local.row_iter().collect();
+    assert!(local.to_dense() == rows);
+}
+
+#[test]
+fn sparsemat_to_dense_empty_shapes() {
+    assert!(SparseMatrix::new().to_dense().is_empty());
+    assert!(SparseMatrix::empty_with_shape(2, 0).to_dense() == vec![Vec::<f64>::new(); 2]);
+    // No rows means the column count is lost
+    assert!(SparseMatrix::empty_with_shape(0, 3).to_dense().is_empty());
+}
+
+#[test]
+fn sparsemat_to_dense_round_trip() {
+    let dense = vec![
+        vec![1.0, 0.0, 2.0],
+        vec![0.0, 0.0, 0.0],
+        vec![0.0, 3.5, 0.0],
+    ];
+    let local = SparseMatrix::from_dense(dense.clone()).unwrap();
+    assert!(local.to_dense() == dense);
+
+    let rebuilt = SparseMatrix::from_dense(local.to_dense()).unwrap();
+    assert!(rebuilt.shape == local.shape);
+    assert!(rebuilt.num_nonzero() == local.num_nonzero());
+}

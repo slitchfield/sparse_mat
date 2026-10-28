@@ -10,10 +10,10 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 ## Construction and conversion
 - [ ] **Bulk constructors:**
     - [x] `from_triplets` that sums duplicates (COO semantics, where `insert_triplets` silently overwrites them)
-    - [ ] `from_dense`
+    - [x] `from_dense`
     - [ ] `from_csr`
     - [ ] `diagonal(vec)`
-    - [ ] `to_dense`
+    - [x] `to_dense`
 - [x] **`empty_with_shape` over-reserves:** it reserves `n * m / 4` entries, which can overflow or attempt a huge allocation for large sparse shapes.
 - [x] **Explicit zeros:** nothing stops `insert(r, c, 0.0)` or `Add` from storing zeros. There's no `prune()` or `drop_zeros()`, and `num_nonzero` over-counts as a result.
 - [ ] **Result-based errors:** the TODOs already note that the `assert!`s should become `Result`.

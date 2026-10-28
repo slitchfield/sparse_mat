@@ -214,6 +214,58 @@ impl SparseMatrix {
         Ok(local)
     }
 
+    /// Builds a matrix from dense rows, e.g. `Vec<Vec<f64>>` or `[[f64; 3]; 2]`. Zeros are
+    /// not stored. The shape is inferred: the number of rows, by the length of the first row.
+    /// Empty input gives a 0 x 0 matrix.
+    ///
+    /// Returns `SparseError::RaggedRows` if any row's length differs from the first row's.
+    /// Accepts `row_iter()` output, so `from_dense(m.row_iter())` rebuilds `m` (except a
+    /// `0 x m` matrix, which has no rows to carry its column count and rebuilds as `0 x 0`).
+    #[allow(dead_code)]
+    pub fn from_dense<R: AsRef<[f64]>>(
+        rows: impl IntoIterator<Item = R>,
+    ) -> Result<SparseMatrix, SparseError> {
+        let mut values = HashMap::new();
+        let mut ncols: Option<usize> = None;
+        let mut nrows: u64 = 0;
+
+        for (row_idx, row) in rows.into_iter().enumerate() {
+            let row = row.as_ref();
+            let expected = *ncols.get_or_insert(row.len());
+            if row.len() != expected {
+                return Err(SparseError::RaggedRows {
+                    row: row_idx as u64,
+                    expected: expected as u64,
+                    found: row.len() as u64,
+                });
+            }
+            for (col_idx, &val) in row.iter().enumerate() {
+                // Zeros (including -0.0) are never stored
+                if val != 0.0f64 {
+                    values.insert((row_idx as u64, col_idx as u64), val);
+                }
+            }
+            nrows += 1;
+        }
+
+        Ok(SparseMatrix::from_values(
+            (nrows, ncols.unwrap_or(0) as u64),
+            values,
+        ))
+    }
+
+    /// Returns the matrix as dense rows. Allocates `rows * cols` elements, so this is only
+    /// suitable for shapes that fit in memory. The inverse of `from_dense`, except that a
+    /// `0 x m` matrix has no rows to carry its column count, so it round-trips as `0 x 0`.
+    #[allow(dead_code)]
+    pub fn to_dense(&self) -> Vec<Vec<f64>> {
+        let mut dense = vec![vec![0.0; self.shape.1 as usize]; self.shape.0 as usize];
+        for ((row, col), val) in self.values.iter() {
+            dense[*row as usize][*col as usize] = *val;
+        }
+        dense
+    }
+
     #[allow(dead_code)]
     pub fn identity(n: u64) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(n, n);
