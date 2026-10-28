@@ -3,7 +3,7 @@
 Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Eigen, `sprs`, `nalgebra-sparse`).
 
 ## Core arithmetic (the biggest gap)
-- [ ] **Multiplication:** matrix × vector (the main reason to have CSR), matrix × dense matrix, and sparse × sparse (SpGEMM).
+- [x] **Multiplication:** matrix × vector (the main reason to have CSR), matrix × dense matrix, and sparse × sparse (SpGEMM).
 - [x] **Scalar and other operators:** `Mul<f64>`, `Sub`, `Neg`, and `AddAssign`/`SubAssign`. `Add` is only implemented for `&SparseMatrix`, so owned operands don't work.
 - [x] **Element-wise ops:** Hadamard product, and `map`/`apply` over stored values.
 
