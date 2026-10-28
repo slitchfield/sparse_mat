@@ -21,7 +21,7 @@ pub use solvers::Lu;
 
 pub use access::{ColIterator, Entries, SparseVector};
 
-/// A sparse matrix of `T` values (`f64` by default; any [`Scalar`](crate::Scalar) type works).
+/// A sparse matrix of `T` values (`f64` by default; any [`Scalar`] type works).
 ///
 /// Entries live in a dictionary of keys (a `HashMap` from `(row, col)` to value), which
 /// makes single-element reads and writes cheap. A zero is never stored: inserting a zero
