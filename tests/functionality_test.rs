@@ -909,3 +909,87 @@ fn sparsemat_index_oob_col() {
     let local = sample_4x6();
     let _ = local[(0, 6)];
 }
+
+#[test]
+fn sparsemat_debug_format() {
+    let local = SparseMatrix::from_triplets(2, 2, vec![(1, 1, 2.0), (0, 1, 1.0)]).unwrap();
+    assert!(
+        format!("{:?}", local)
+            == "SparseMatrix { shape: (2, 2), entries: [(0, 1, 1.0), (1, 1, 2.0)] }"
+    );
+}
+
+#[test]
+fn sparsemat_partial_eq() {
+    let local = SparseMatrix::from_triplets(2, 2, vec![(0, 0, 1.0), (1, 1, 2.0)]).unwrap();
+    // Same entries inserted in a different order, with a different cache state
+    let mut local2 = SparseMatrix::empty_with_shape(2, 2);
+    local2.insert(1, 1, 2.0).unwrap();
+    local2.insert(0, 0, 1.0).unwrap();
+    local2.explicitly_compress();
+    assert!(local == local2);
+
+    local2.insert(0, 1, 5.0).unwrap();
+    assert!(local != local2);
+
+    // Same entries but different shape
+    let wider = SparseMatrix::from_triplets(2, 3, vec![(0, 0, 1.0), (1, 1, 2.0)]).unwrap();
+    assert!(local != wider);
+}
+
+#[test]
+fn sparsemat_partial_eq_nan_not_reflexive() {
+    let local = SparseMatrix::from_dense(vec![vec![f64::NAN]]).unwrap();
+    assert!(local != local.clone());
+}
+
+#[test]
+fn sparsemat_into_iterator() {
+    let local = SparseMatrix::from_triplets(3, 3, vec![(2, 0, 3.0), (0, 1, 1.0)]).unwrap();
+
+    let mut by_ref = vec![];
+    for (row, col, val) in &local {
+        by_ref.push((row, col, val));
+    }
+    assert!(by_ref == vec![(0, 1, 1.0), (2, 0, 3.0)]);
+
+    let by_value: Vec<_> = local.into_iter().collect();
+    assert!(by_value == by_ref);
+}
+
+#[test]
+fn sparsemat_from_array() {
+    let local = SparseMatrix::from([[1.0, 0.0, 2.0], [0.0, 3.0, 0.0]]);
+    assert!(local.shape == (2, 3));
+    assert!(local.num_nonzero() == 3);
+    assert!(local[(1, 1)] == 3.0);
+
+    // Zero-row arrays keep their column count
+    let empty: SparseMatrix<f64> = SparseMatrix::from([[0.0; 4]; 0]);
+    assert!(empty.shape == (0, 4));
+}
+
+#[test]
+fn sparsemat_try_from_vecs() {
+    let local = SparseMatrix::try_from(vec![vec![1, 0], vec![0, 2]]).unwrap();
+    assert!(local.shape == (2, 2));
+
+    let ragged = SparseMatrix::try_from(vec![vec![1, 0], vec![2]]);
+    assert!(
+        ragged.err()
+            == Some(SparseError::RaggedRows {
+                row: 1,
+                expected: 2,
+                found: 1
+            })
+    );
+}
+
+#[test]
+fn sparsemat_into_dense_vecs() {
+    let local = SparseMatrix::from([[1.0, 0.0], [0.0, 2.0]]);
+    let by_ref: Vec<Vec<f64>> = (&local).into();
+    assert!(by_ref == vec![vec![1.0, 0.0], vec![0.0, 2.0]]);
+    let by_value: Vec<Vec<f64>> = local.into();
+    assert!(by_value == by_ref);
+}

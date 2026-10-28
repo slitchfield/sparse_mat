@@ -6,6 +6,7 @@ use crate::Scalar;
 
 mod access;
 mod ops;
+mod traits;
 
 pub use access::{ColIterator, Entries, SparseVector};
 

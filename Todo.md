@@ -26,7 +26,7 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 - [x] **Indexing:** `Index<(u64, u64)>` (`peek_at` returns an `Option` instead).
 
 ## Standard traits
-- [ ] `Debug` (only `Clone` is derived), `PartialEq`, `IntoIterator`, and `From` conversions.
+- [x] `Debug` (only `Clone` is derived), `PartialEq`, `IntoIterator`, and `From` conversions.
 
 ## Storage
 - [x] **Real compressed storage:** the file's header comment already plans a move to CSR and CSC. CSC would make column access and `Aᵀ·x` cheap. Done as cached CSR *and* CSC forms built by one shared routine; the hash map stays the mutable store so single-element edits remain O(1) (a CSR-only store would make them O(nnz)).
