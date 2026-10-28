@@ -1,22 +1,23 @@
 use std::collections::HashMap;
 
 use crate::sparse_error::SparseError;
+use crate::Scalar;
 
-/// A sparse matrix of `f64` values.
+/// A sparse matrix of `T` values (`f64` by default; any [`Scalar`](crate::Scalar) type works).
 ///
 /// Entries live in a dictionary of keys (a `HashMap` from `(row, col)` to value), which
-/// makes single-element reads and writes cheap. A zero is never stored: inserting `0.0`
+/// makes single-element reads and writes cheap. A zero is never stored: inserting a zero
 /// removes any existing entry, so `num_nonzero` is the number of stored entries.
 ///
 /// A compressed sparse row (CSR) copy is built on demand by `explicitly_compress` and
 /// exposed through `compressed`. Any mutation makes that copy stale. To support efficient
 /// operations the storage should eventually move to CSR/CSC proper.
 #[derive(Clone)]
-pub struct SparseMatrix {
+pub struct SparseMatrix<T = f64> {
     /// The matrix dimensions as `(rows, cols)`.
     pub shape: (usize, usize),
     /// The stored (non-zero) entries, keyed by `(row, col)`.
-    values: HashMap<(usize, usize), f64>,
+    values: HashMap<(usize, usize), T>,
 
     /// Whether the `compressed_*` arrays reflect the current `values`.
     compressed_updated: bool,
@@ -25,43 +26,43 @@ pub struct SparseMatrix {
     /// Cached CSR column indices, sorted within each row.
     compressed_colarray: Vec<usize>,
     /// Cached CSR values, parallel to `compressed_colarray`.
-    compressed_dataarray: Vec<f64>,
+    compressed_dataarray: Vec<T>,
 }
 
 /// Borrowed view of the matrix's cached CSR arrays, as returned by
 /// `SparseMatrix::compressed`.
-pub struct CsrView<'a> {
+pub struct CsrView<'a, T = f64> {
     /// Row pointers: row `i`'s entries are `cols[rows[i]..rows[i + 1]]`.
     pub rows: &'a [usize],
     /// Column index of each stored entry, sorted within each row.
     pub cols: &'a [usize],
     /// Value of each stored entry, parallel to `cols`.
-    pub data: &'a [f64],
+    pub data: &'a [T],
 }
 
 /// Standalone CSR arrays, built without touching the matrix's cached copy.
-struct Csr {
+struct Csr<T> {
     /// Row pointers (`rows + 1` entries).
     rows: Vec<usize>,
     /// Column index of each stored entry, sorted within each row.
     cols: Vec<usize>,
     /// Value of each stored entry, parallel to `cols`.
-    data: Vec<f64>,
+    data: Vec<T>,
 }
 
 /// Iterator over a matrix's rows, created by `SparseMatrix::row_iter`.
 ///
 /// Each item is one dense row of length `shape.1`.
-pub struct RowIterator<'a> {
-    matrix: &'a SparseMatrix,
+pub struct RowIterator<'a, T = f64> {
+    matrix: &'a SparseMatrix<T>,
     /// Only set when the matrix's cached CSR arrays are stale.
-    owned: Option<Csr>,
+    owned: Option<Csr<T>>,
     row_iter_idx: usize,
 }
 
-impl Iterator for RowIterator<'_> {
+impl<T: Scalar> Iterator for RowIterator<'_, T> {
     /// One dense row.
-    type Item = Vec<f64>;
+    type Item = Vec<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.row_iter_idx < self.matrix.shape.0 {
@@ -79,7 +80,7 @@ impl Iterator for RowIterator<'_> {
             let colslice = &cols[start..end];
             let dataslice = &data[start..end];
 
-            let mut retvec: Vec<f64> = vec![0.0; self.matrix.shape.1];
+            let mut retvec: Vec<T> = vec![T::zero(); self.matrix.shape.1];
 
             for (col, val) in std::iter::zip(colslice, dataslice) {
                 retvec[*col] = *val;
@@ -94,17 +95,17 @@ impl Iterator for RowIterator<'_> {
     }
 }
 
-impl Default for SparseMatrix {
+impl<T: Scalar> Default for SparseMatrix<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SparseMatrix {
+impl<T: Scalar> SparseMatrix<T> {
     /// Builds CSR arrays from `values` without modifying the cache.
-    fn build_csr(&self) -> Csr {
+    fn build_csr(&self) -> Csr<T> {
         // Create row vecs that we'll sort by col
-        let mut row_vecs: Vec<Vec<(usize, f64)>> = vec![];
+        let mut row_vecs: Vec<Vec<(usize, T)>> = vec![];
         for _ in 0..self.shape.0 {
             row_vecs.push(vec![]);
         }
@@ -151,7 +152,7 @@ impl SparseMatrix {
 
     /// The cached CSR arrays, or `None` if they are stale (or were never built).
     /// Call `explicitly_compress` to refresh them.
-    pub fn compressed(&self) -> Option<CsrView<'_>> {
+    pub fn compressed(&self) -> Option<CsrView<'_, T>> {
         if self.compressed_updated {
             Some(CsrView {
                 rows: &self.compressed_rowarray,
@@ -163,12 +164,12 @@ impl SparseMatrix {
         }
     }
 
-    /// Iterates over the rows of the matrix, yielding each as a dense `Vec<f64>`.
+    /// Iterates over the rows of the matrix, yielding each as a dense `Vec<T>`.
     ///
     /// Always reflects the current contents. Call `explicitly_compress` first when
     /// iterating repeatedly; otherwise each iterator rebuilds the CSR arrays itself.
     #[allow(dead_code)]
-    pub fn row_iter(&self) -> RowIterator<'_> {
+    pub fn row_iter(&self) -> RowIterator<'_, T> {
         RowIterator {
             matrix: self,
             owned: if self.compressed_updated {
@@ -182,8 +183,8 @@ impl SparseMatrix {
 
     /// Creates an empty `0 x 0` matrix.
     #[allow(dead_code)]
-    pub fn new() -> SparseMatrix {
-        SparseMatrix {
+    pub fn new() -> SparseMatrix<T> {
+        Self {
             shape: (0, 0),
             values: HashMap::new(),
             compressed_updated: false,
@@ -195,16 +196,16 @@ impl SparseMatrix {
 
     /// Creates an `n x m` matrix with no stored entries.
     #[allow(dead_code)]
-    pub fn empty_with_shape(n: usize, m: usize) -> SparseMatrix {
+    pub fn empty_with_shape(n: usize, m: usize) -> SparseMatrix<T> {
         // No up-front reservation: n * m says nothing about how many entries a sparse
         //   matrix will hold, and can overflow or be enormous. The map grows as needed.
-        SparseMatrix::from_values((n, m), HashMap::new())
+        Self::from_values((n, m), HashMap::new())
     }
 
     /// Wraps an existing entry map in a matrix of the given shape, with a stale cache.
     /// The caller guarantees every key is in bounds and no value is zero.
-    fn from_values(shape: (usize, usize), values: HashMap<(usize, usize), f64>) -> SparseMatrix {
-        SparseMatrix {
+    fn from_values(shape: (usize, usize), values: HashMap<(usize, usize), T>) -> SparseMatrix<T> {
+        Self {
             shape,
             values,
             compressed_updated: false,
@@ -225,8 +226,8 @@ impl SparseMatrix {
         rows: usize,
         cols: usize,
         // COO semantics: duplicate (row, col) entries are summed
-        triplets: impl IntoIterator<Item = (usize, usize, f64)>,
-    ) -> Result<SparseMatrix, SparseError> {
+        triplets: impl IntoIterator<Item = (usize, usize, T)>,
+    ) -> Result<SparseMatrix<T>, SparseError> {
         let triplets = triplets.into_iter();
         // Sized by the number of triplets, not rows * cols, which can be enormous
         let mut values = HashMap::with_capacity(triplets.size_hint().0);
@@ -239,16 +240,17 @@ impl SparseMatrix {
                     shape: (rows, cols),
                 });
             }
-            *values.entry((row, col)).or_insert(0.0) += val;
+            let entry = values.entry((row, col)).or_insert(T::zero());
+            *entry = *entry + val;
         }
 
-        let mut local = SparseMatrix::from_values((rows, cols), values);
+        let mut local = Self::from_values((rows, cols), values);
         // Zero inputs and exact cancellations leave stored zeros; drop them
         local.prune_zeroes();
         Ok(local)
     }
 
-    /// Builds a matrix from dense rows, e.g. `Vec<Vec<f64>>` or `[[f64; 3]; 2]`. Zeros are
+    /// Builds a matrix from dense rows, e.g. `Vec<Vec<T>>` or `[[T; 3]; 2]`. Zeros are
     /// not stored. The shape is inferred: the number of rows, by the length of the first row.
     /// Empty input gives a 0 x 0 matrix.
     ///
@@ -256,9 +258,9 @@ impl SparseMatrix {
     /// Accepts `row_iter()` output, so `from_dense(m.row_iter())` rebuilds `m` (except a
     /// `0 x m` matrix, which has no rows to carry its column count and rebuilds as `0 x 0`).
     #[allow(dead_code)]
-    pub fn from_dense<R: AsRef<[f64]>>(
+    pub fn from_dense<R: AsRef<[T]>>(
         rows: impl IntoIterator<Item = R>,
-    ) -> Result<SparseMatrix, SparseError> {
+    ) -> Result<SparseMatrix<T>, SparseError> {
         let mut values = HashMap::new();
         let mut ncols: Option<usize> = None;
         let mut nrows: usize = 0;
@@ -274,26 +276,23 @@ impl SparseMatrix {
                 });
             }
             for (col_idx, &val) in row.iter().enumerate() {
-                // Zeros (including -0.0) are never stored
-                if val != 0.0f64 {
+                // Zeros (including -0.0 for floats) are never stored
+                if val != T::zero() {
                     values.insert((row_idx, col_idx), val);
                 }
             }
             nrows += 1;
         }
 
-        Ok(SparseMatrix::from_values(
-            (nrows, ncols.unwrap_or(0)),
-            values,
-        ))
+        Ok(Self::from_values((nrows, ncols.unwrap_or(0)), values))
     }
 
     /// Returns the matrix as dense rows. Allocates `rows * cols` elements, so this is only
     /// suitable for shapes that fit in memory. The inverse of `from_dense`, except that a
     /// `0 x m` matrix has no rows to carry its column count, so it round-trips as `0 x 0`.
     #[allow(dead_code)]
-    pub fn to_dense(&self) -> Vec<Vec<f64>> {
-        let mut dense = vec![vec![0.0; self.shape.1]; self.shape.0];
+    pub fn to_dense(&self) -> Vec<Vec<T>> {
+        let mut dense = vec![vec![T::zero(); self.shape.1]; self.shape.0];
         for ((row, col), val) in self.values.iter() {
             dense[*row][*col] = *val;
         }
@@ -302,12 +301,12 @@ impl SparseMatrix {
 
     /// Creates the `n x n` identity matrix.
     #[allow(dead_code)]
-    pub fn identity(n: usize) -> SparseMatrix {
-        let mut local = SparseMatrix::empty_with_shape(n, n);
+    pub fn identity(n: usize) -> SparseMatrix<T> {
+        let mut local = Self::empty_with_shape(n, n);
         local.values.reserve(n);
         for diag_idx in 0..n {
             // Unwrap safe by construction of diag_idx
-            local.insert(diag_idx, diag_idx, 1.0).unwrap();
+            local.insert(diag_idx, diag_idx, T::one()).unwrap();
         }
         local
     }
@@ -315,8 +314,8 @@ impl SparseMatrix {
     /// Returns the transpose as a new matrix, leaving `self` unchanged. See
     /// `transpose_inplace` to transpose without allocating a second matrix.
     #[allow(dead_code)]
-    pub fn create_transpose(&self) -> SparseMatrix {
-        let mut local = SparseMatrix::empty_with_shape(self.shape.1, self.shape.0);
+    pub fn create_transpose(&self) -> SparseMatrix<T> {
+        let mut local = Self::empty_with_shape(self.shape.1, self.shape.0);
         local.values.reserve(self.values.len());
         for ((row, col), val) in self.values.iter() {
             // Unwrap safe by construction of col, row
@@ -327,10 +326,10 @@ impl SparseMatrix {
 
     /// Sets the entry at `(row, col)` to `value`, replacing any existing value.
     ///
-    /// Inserting `0.0` removes the entry instead, since zeros are never stored.
+    /// Inserting a zero removes the entry instead, since zeros are never stored.
     /// Returns `SparseError::OutOfBounds` if the position is outside the matrix.
     #[allow(dead_code)]
-    pub fn insert(&mut self, row: usize, col: usize, value: f64) -> Result<(), SparseError> {
+    pub fn insert(&mut self, row: usize, col: usize, value: T) -> Result<(), SparseError> {
         if row >= self.shape.0 || col >= self.shape.1 {
             return Err(SparseError::OutOfBounds {
                 row,
@@ -340,7 +339,7 @@ impl SparseMatrix {
         }
 
         // If new value is exactly zero, clear any existing entry
-        if value == 0.0f64 {
+        if value == T::zero() {
             // UNWRAP: already validated row, col above
             self.clear_at(row, col).unwrap();
         } else {
@@ -358,10 +357,7 @@ impl SparseMatrix {
     /// Every triplet is bounds-checked before any is applied, so on
     /// `SparseError::OutOfBounds` the matrix is left unchanged.
     #[allow(dead_code)]
-    pub fn insert_triplets(
-        &mut self,
-        triplets: Vec<(usize, usize, f64)>,
-    ) -> Result<(), SparseError> {
+    pub fn insert_triplets(&mut self, triplets: Vec<(usize, usize, T)>) -> Result<(), SparseError> {
         // Iterate through triplets first to validate no oob errors before changing
         //   underlying matrix state
         for (row, col, _) in triplets.iter() {
@@ -376,7 +372,7 @@ impl SparseMatrix {
 
         for (row, col, val) in triplets.iter() {
             // If new value is exactly zero, clear any existing entry
-            if *val == 0.0f64 {
+            if *val == T::zero() {
                 // UNWRAP: Already validated row, col above
                 self.clear_at(*row, *col).unwrap();
             } else {
@@ -392,7 +388,7 @@ impl SparseMatrix {
     ///
     /// Returns `SparseError::OutOfBounds` if the position is outside the matrix.
     #[allow(dead_code)]
-    pub fn clear_at(&mut self, row: usize, col: usize) -> Result<Option<f64>, SparseError> {
+    pub fn clear_at(&mut self, row: usize, col: usize) -> Result<Option<T>, SparseError> {
         if row >= self.shape.0 || col >= self.shape.1 {
             return Err(SparseError::OutOfBounds {
                 row,
@@ -410,7 +406,7 @@ impl SparseMatrix {
     ///
     /// Returns `SparseError::OutOfBounds` if the position is outside the matrix.
     #[allow(dead_code)]
-    pub fn peek_at(&self, row: usize, col: usize) -> Result<Option<f64>, SparseError> {
+    pub fn peek_at(&self, row: usize, col: usize) -> Result<Option<T>, SparseError> {
         if row >= self.shape.0 || col >= self.shape.1 {
             return Err(SparseError::OutOfBounds {
                 row,
@@ -435,7 +431,7 @@ impl SparseMatrix {
         // Naive impl, could do better
         self.shape = (self.shape.1, self.shape.0);
 
-        let triplets: Vec<((usize, usize), f64)> = self.values.drain().collect();
+        let triplets: Vec<((usize, usize), T)> = self.values.drain().collect();
 
         for ((row, col), val) in triplets {
             self.values.insert((col, row), val);
@@ -450,7 +446,7 @@ impl SparseMatrix {
     #[allow(dead_code)]
     pub fn prune_zeroes(&mut self) {
         let init_len = self.values.len();
-        self.values.retain(|_, v| *v != 0.0f64);
+        self.values.retain(|_, v| *v != T::zero());
         let final_len = self.values.len();
         if init_len != final_len {
             self.compressed_updated = false;
@@ -460,7 +456,7 @@ impl SparseMatrix {
 
 use std::fmt;
 /// Formats the matrix as a bracketed grid of dense rows, one per line.
-impl fmt::Display for SparseMatrix {
+impl<T: Scalar + fmt::Display> fmt::Display for SparseMatrix<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let inner_line_width = 8 * self.shape.1; // 6 chars per col + comma + space + leading space
         write!(f, "\t/")?;
@@ -497,20 +493,23 @@ use std::ops::Add;
 /// # Panics
 ///
 /// Panics if the two matrices have different shapes.
-impl Add for &SparseMatrix {
-    type Output = SparseMatrix;
+impl<T: Scalar> Add for &SparseMatrix<T> {
+    type Output = SparseMatrix<T>;
 
-    fn add(self, other: &SparseMatrix) -> SparseMatrix {
+    fn add(self, other: &SparseMatrix<T>) -> SparseMatrix<T> {
         assert!(self.shape == other.shape);
         let mut local = self.clone();
 
         for ((rother, cother), elemother) in other.values.iter() {
             // RESULT UNWRAP: shape validated above, so rother, cother in bounds
-            let existingval = local.peek_at(*rother, *cother).unwrap().unwrap_or(0.0);
-            // See if new value for r, c would be exactly 0.0
+            let existingval = local
+                .peek_at(*rother, *cother)
+                .unwrap()
+                .unwrap_or(T::zero());
+            // See if new value for r, c would be exactly zero
             let newval = existingval + *elemother;
             // TODO: zero check here is redundant with zero check in local.insert(). Evaluate removal
-            if newval == 0.0f64 {
+            if newval == T::zero() {
                 // Don't insert, and also clear whatever value already exists at local
                 // UNWRAP: validated shapes above, rother cother safe by construction
                 local.clear_at(*rother, *cother).unwrap();

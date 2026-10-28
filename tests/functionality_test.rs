@@ -2,8 +2,8 @@ use sparse_mat::{sparse_error::SparseError, sparse_matrix::SparseMatrix};
 
 #[test]
 fn sparsemat_creation() {
-    let _local = SparseMatrix::new();
-    let _local2 = SparseMatrix::empty_with_shape(3, 3);
+    let _local = SparseMatrix::<f64>::new();
+    let _local2 = SparseMatrix::<f64>::empty_with_shape(3, 3);
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn sparsemat_remove() {
 
 #[test]
 fn sparsemat_remove_oob() {
-    let mut local = SparseMatrix::empty_with_shape(3, 3);
+    let mut local = SparseMatrix::<f64>::empty_with_shape(3, 3);
 
     assert!(
         local.clear_at(4, 4)
@@ -293,7 +293,7 @@ fn sparsemat_display_uncompressed() {
 #[test]
 #[should_panic]
 fn sparsemat_bad_addition() {
-    let local = SparseMatrix::empty_with_shape(3, 3);
+    let local = SparseMatrix::<f64>::empty_with_shape(3, 3);
     let local2 = SparseMatrix::empty_with_shape(2, 2);
 
     let _local3 = &local + &local2;
@@ -443,7 +443,7 @@ fn sparsemat_from_triplets_oob() {
 
 #[test]
 fn sparsemat_from_triplets_empty() {
-    let local = SparseMatrix::from_triplets(3, 5, vec![]).unwrap();
+    let local = SparseMatrix::<f64>::from_triplets(3, 5, vec![]).unwrap();
     assert!(local.shape == (3, 5));
     assert!(local.num_nonzero() == 0);
 }
@@ -502,7 +502,7 @@ fn sparsemat_from_dense_empty() {
     assert!(local.num_nonzero() == 0);
 
     // Rows with no columns are a valid n x 0 matrix
-    let local = SparseMatrix::from_dense(vec![vec![], vec![]]).unwrap();
+    let local = SparseMatrix::<f64>::from_dense(vec![vec![], vec![]]).unwrap();
     assert!(local.shape == (2, 0));
 }
 
@@ -554,10 +554,12 @@ fn sparsemat_to_dense_matches_row_iter() {
 
 #[test]
 fn sparsemat_to_dense_empty_shapes() {
-    assert!(SparseMatrix::new().to_dense().is_empty());
-    assert!(SparseMatrix::empty_with_shape(2, 0).to_dense() == vec![Vec::<f64>::new(); 2]);
+    assert!(SparseMatrix::<f64>::new().to_dense().is_empty());
+    assert!(SparseMatrix::<f64>::empty_with_shape(2, 0).to_dense() == vec![Vec::<f64>::new(); 2]);
     // No rows means the column count is lost
-    assert!(SparseMatrix::empty_with_shape(0, 3).to_dense().is_empty());
+    assert!(SparseMatrix::<f64>::empty_with_shape(0, 3)
+        .to_dense()
+        .is_empty());
 }
 
 #[test]
@@ -573,4 +575,39 @@ fn sparsemat_to_dense_round_trip() {
     let rebuilt = SparseMatrix::from_dense(local.to_dense()).unwrap();
     assert!(rebuilt.shape == local.shape);
     assert!(rebuilt.num_nonzero() == local.num_nonzero());
+}
+
+#[test]
+fn sparsemat_integer_elements() {
+    let mut local = SparseMatrix::<i32>::empty_with_shape(2, 2);
+    local.insert(0, 0, 3).unwrap();
+    local.insert(1, 1, 4).unwrap();
+    local.insert(1, 1, 0).unwrap();
+    assert!(local.peek_at(0, 0) == Ok(Some(3)));
+    assert!(local.peek_at(1, 1) == Ok(None));
+
+    let other = SparseMatrix::from_triplets(2, 2, vec![(0, 0, 4), (0, 1, 1)]).unwrap();
+    let sum = &local + &other;
+    assert!(sum.to_dense() == vec![vec![7, 1], vec![0, 0]]);
+    assert!(format!("{}", sum).contains('7'));
+}
+
+#[test]
+fn sparsemat_f32_elements() {
+    let local = SparseMatrix::<f32>::identity(3);
+    assert!(local.num_nonzero() == 3);
+    let doubled = &local + &local;
+    assert!(doubled.peek_at(2, 2) == Ok(Some(2.0f32)));
+}
+
+#[test]
+fn sparsemat_complex_elements() {
+    use num_complex::Complex;
+    let i = Complex::new(0.0, 1.0);
+    let mut local = SparseMatrix::empty_with_shape(2, 2);
+    local.insert(0, 1, i).unwrap();
+    local.insert(1, 0, Complex::new(1.0, 0.0)).unwrap();
+    let sum = &local + &local;
+    assert!(sum.peek_at(0, 1) == Ok(Some(Complex::new(0.0, 2.0))));
+    assert!(local.create_transpose().peek_at(1, 0) == Ok(Some(i)));
 }
