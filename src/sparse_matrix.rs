@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::sparse_error::SparseError;
@@ -9,9 +10,11 @@ use crate::Scalar;
 /// makes single-element reads and writes cheap. A zero is never stored: inserting a zero
 /// removes any existing entry, so `num_nonzero` is the number of stored entries.
 ///
-/// A compressed sparse row (CSR) copy is built on demand by `explicitly_compress` and
-/// exposed through `compressed`. Any mutation makes that copy stale. To support efficient
-/// operations the storage should eventually move to CSR/CSC proper.
+/// Compressed sparse row (CSR) and compressed sparse column (CSC) copies are built on demand
+/// by `explicitly_compress` and `explicitly_compress_csc` and exposed through `compressed`
+/// and `compressed_csc`. Any mutation drops both copies. Operations that need compressed
+/// storage (row and column access, products) read a fresh cached copy when there is one and
+/// otherwise build a temporary one, so they are always correct but cheaper after compressing.
 #[derive(Clone)]
 pub struct SparseMatrix<T = f64> {
     /// The matrix dimensions as `(rows, cols)`.
@@ -19,14 +22,10 @@ pub struct SparseMatrix<T = f64> {
     /// The stored (non-zero) entries, keyed by `(row, col)`.
     values: HashMap<(usize, usize), T>,
 
-    /// Whether the `compressed_*` arrays reflect the current `values`.
-    compressed_updated: bool,
-    /// Cached CSR row pointers (`rows + 1` entries once built).
-    compressed_rowarray: Vec<usize>,
-    /// Cached CSR column indices, sorted within each row.
-    compressed_colarray: Vec<usize>,
-    /// Cached CSR values, parallel to `compressed_colarray`.
-    compressed_dataarray: Vec<T>,
+    /// Cached CSR copy of `values`; `None` once any mutation makes it stale.
+    csr: Option<Compressed<T>>,
+    /// Cached CSC copy of `values`; `None` once any mutation makes it stale.
+    csc: Option<Compressed<T>>,
 }
 
 /// Borrowed view of the matrix's cached CSR arrays, as returned by
@@ -40,23 +39,35 @@ pub struct CsrView<'a, T = f64> {
     pub data: &'a [T],
 }
 
-/// Standalone CSR arrays, built without touching the matrix's cached copy.
-struct Csr<T> {
-    /// Row pointers (`rows + 1` entries).
-    rows: Vec<usize>,
-    /// Column index of each stored entry, sorted within each row.
-    cols: Vec<usize>,
-    /// Value of each stored entry, parallel to `cols`.
-    data: Vec<T>,
+/// Borrowed view of the matrix's cached CSC arrays, as returned by
+/// `SparseMatrix::compressed_csc`.
+pub struct CscView<'a, T = f64> {
+    /// Column pointers: column `j`'s entries are `rows[cols[j]..cols[j + 1]]`.
+    pub cols: &'a [usize],
+    /// Row index of each stored entry, sorted within each column.
+    pub rows: &'a [usize],
+    /// Value of each stored entry, parallel to `rows`.
+    pub data: &'a [T],
+}
+
+/// Compressed sparse storage along one axis.
+///
+/// For CSR, `ptr` holds row pointers and `idx` column indices; for CSC the roles swap. `idx`
+/// is sorted within each segment of `ptr`, and `data` is parallel to `idx`.
+#[derive(Clone)]
+pub(crate) struct Compressed<T> {
+    pub(crate) ptr: Vec<usize>,
+    pub(crate) idx: Vec<usize>,
+    pub(crate) data: Vec<T>,
 }
 
 /// Iterator over a matrix's rows, created by `SparseMatrix::row_iter`.
 ///
 /// Each item is one dense row of length `shape.1`.
-pub struct RowIterator<'a, T = f64> {
-    matrix: &'a SparseMatrix<T>,
-    /// Only set when the matrix's cached CSR arrays are stale.
-    owned: Option<Csr<T>>,
+pub struct RowIterator<'a, T: Scalar = f64> {
+    shape: (usize, usize),
+    /// Borrowed from the matrix's cache when fresh, otherwise built for this iterator.
+    csr: Cow<'a, Compressed<T>>,
     row_iter_idx: usize,
 }
 
@@ -65,22 +76,14 @@ impl<T: Scalar> Iterator for RowIterator<'_, T> {
     type Item = Vec<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.row_iter_idx < self.matrix.shape.0 {
-            let (rows, cols, data) = match &self.owned {
-                Some(csr) => (&csr.rows, &csr.cols, &csr.data),
-                None => (
-                    &self.matrix.compressed_rowarray,
-                    &self.matrix.compressed_colarray,
-                    &self.matrix.compressed_dataarray,
-                ),
-            };
-            let start = rows[self.row_iter_idx];
-            let end = rows[self.row_iter_idx + 1];
+        if self.row_iter_idx < self.shape.0 {
+            let start = self.csr.ptr[self.row_iter_idx];
+            let end = self.csr.ptr[self.row_iter_idx + 1];
 
-            let colslice = &cols[start..end];
-            let dataslice = &data[start..end];
+            let colslice = &self.csr.idx[start..end];
+            let dataslice = &self.csr.data[start..end];
 
-            let mut retvec: Vec<T> = vec![T::zero(); self.matrix.shape.1];
+            let mut retvec: Vec<T> = vec![T::zero(); self.shape.1];
 
             for (col, val) in std::iter::zip(colslice, dataslice) {
                 retvec[*col] = *val;
@@ -102,44 +105,52 @@ impl<T: Scalar> Default for SparseMatrix<T> {
 }
 
 impl<T: Scalar> SparseMatrix<T> {
-    /// Builds CSR arrays from `values` without modifying the cache.
-    fn build_csr(&self) -> Csr<T> {
-        // Create row vecs that we'll sort by col
-        let mut row_vecs: Vec<Vec<(usize, T)>> = vec![];
-        for _ in 0..self.shape.0 {
-            row_vecs.push(vec![]);
+    /// Builds compressed storage from `values` without modifying the caches: CSR
+    /// (`by_col = false`) or CSC (`by_col = true`).
+    fn build_compressed(&self, by_col: bool) -> Compressed<T> {
+        let major_dim = if by_col { self.shape.1 } else { self.shape.0 };
+        let major_of = |&(row, col): &(usize, usize)| if by_col { col } else { row };
+
+        // Count entries per major index, then prefix-sum into segment pointers
+        let mut ptr = vec![0; major_dim + 1];
+        for key in self.values.keys() {
+            ptr[major_of(key) + 1] += 1;
+        }
+        let mut running = 0;
+        for p in ptr.iter_mut() {
+            running += *p;
+            *p = running;
         }
 
-        for ((row, col), val) in self.values.iter() {
-            row_vecs[*row].push((*col, *val));
+        // Scatter each entry into its segment, then sort segments by minor index
+        let mut next = ptr.clone();
+        let mut entries = vec![(0, T::zero()); self.values.len()];
+        for (key, val) in self.values.iter() {
+            let major = major_of(key);
+            let minor = if by_col { key.0 } else { key.1 };
+            entries[next[major]] = (minor, *val);
+            next[major] += 1;
         }
-        for row in row_vecs.iter_mut() {
-            row.sort_by_key(|a| a.0);
+        for segment in ptr.windows(2) {
+            entries[segment[0]..segment[1]].sort_unstable_by_key(|entry| entry.0);
         }
 
-        let mut csr = Csr {
-            rows: vec![0],
-            cols: vec![],
-            data: vec![],
-        };
-        for row in row_vecs {
-            for (col, val) in row {
-                csr.cols.push(col);
-                csr.data.push(val);
-            }
-            csr.rows.push(csr.data.len());
-        }
-        csr
+        let (idx, data) = entries.into_iter().unzip();
+        Compressed { ptr, idx, data }
     }
 
-    /// Rebuilds the cached CSR arrays and marks them current.
-    fn _update_compressed(&mut self) {
-        let csr = self.build_csr();
-        self.compressed_rowarray = csr.rows;
-        self.compressed_colarray = csr.cols;
-        self.compressed_dataarray = csr.data;
+    /// Drops the cached compressed copies; call after any change to `values` or `shape`.
+    fn invalidate(&mut self) {
+        self.csr = None;
+        self.csc = None;
+    }
 
-        self.compressed_updated = true
+    /// The CSR form: borrowed from the cache when fresh, otherwise built on the spot.
+    pub(crate) fn csr_cow(&self) -> Cow<'_, Compressed<T>> {
+        match &self.csr {
+            Some(csr) => Cow::Borrowed(csr),
+            None => Cow::Owned(self.build_compressed(false)),
+        }
     }
 
     /// Rebuilds the cached CSR arrays so that `compressed` returns `Some` again.
@@ -147,21 +158,34 @@ impl<T: Scalar> SparseMatrix<T> {
     /// Worthwhile before iterating repeatedly, since `row_iter` otherwise rebuilds the
     /// arrays for every iterator while the cache is stale.
     pub fn explicitly_compress(&mut self) {
-        self._update_compressed();
+        self.csr = Some(self.build_compressed(false));
+    }
+
+    /// Rebuilds the cached CSC arrays so that `compressed_csc` returns `Some` again.
+    ///
+    /// Worthwhile before repeated column access or transposed products.
+    pub fn explicitly_compress_csc(&mut self) {
+        self.csc = Some(self.build_compressed(true));
     }
 
     /// The cached CSR arrays, or `None` if they are stale (or were never built).
     /// Call `explicitly_compress` to refresh them.
     pub fn compressed(&self) -> Option<CsrView<'_, T>> {
-        if self.compressed_updated {
-            Some(CsrView {
-                rows: &self.compressed_rowarray,
-                cols: &self.compressed_colarray,
-                data: &self.compressed_dataarray,
-            })
-        } else {
-            None
-        }
+        self.csr.as_ref().map(|csr| CsrView {
+            rows: &csr.ptr,
+            cols: &csr.idx,
+            data: &csr.data,
+        })
+    }
+
+    /// The cached CSC arrays, or `None` if they are stale (or were never built).
+    /// Call `explicitly_compress_csc` to refresh them.
+    pub fn compressed_csc(&self) -> Option<CscView<'_, T>> {
+        self.csc.as_ref().map(|csc| CscView {
+            cols: &csc.ptr,
+            rows: &csc.idx,
+            data: &csc.data,
+        })
     }
 
     /// Iterates over the rows of the matrix, yielding each as a dense `Vec<T>`.
@@ -171,12 +195,8 @@ impl<T: Scalar> SparseMatrix<T> {
     #[allow(dead_code)]
     pub fn row_iter(&self) -> RowIterator<'_, T> {
         RowIterator {
-            matrix: self,
-            owned: if self.compressed_updated {
-                None
-            } else {
-                Some(self.build_csr())
-            },
+            shape: self.shape,
+            csr: self.csr_cow(),
             row_iter_idx: 0,
         }
     }
@@ -187,10 +207,8 @@ impl<T: Scalar> SparseMatrix<T> {
         Self {
             shape: (0, 0),
             values: HashMap::new(),
-            compressed_updated: false,
-            compressed_rowarray: vec![],
-            compressed_colarray: vec![],
-            compressed_dataarray: vec![],
+            csr: None,
+            csc: None,
         }
     }
 
@@ -208,10 +226,8 @@ impl<T: Scalar> SparseMatrix<T> {
         Self {
             shape,
             values,
-            compressed_updated: false,
-            compressed_rowarray: vec![],
-            compressed_colarray: vec![],
-            compressed_dataarray: vec![],
+            csr: None,
+            csc: None,
         }
     }
 
@@ -345,7 +361,7 @@ impl<T: Scalar> SparseMatrix<T> {
         } else {
             self.values.insert((row, col), value);
         }
-        self.compressed_updated = false;
+        self.invalidate();
         Ok(())
     }
 
@@ -379,7 +395,7 @@ impl<T: Scalar> SparseMatrix<T> {
                 self.values.insert((*row, *col), *val);
             }
         }
-        self.compressed_updated = false;
+        self.invalidate();
         Ok(())
     }
 
@@ -397,7 +413,7 @@ impl<T: Scalar> SparseMatrix<T> {
             });
         }
 
-        self.compressed_updated = false;
+        self.invalidate();
         Ok(self.values.remove(&(row, col)))
     }
 
@@ -436,7 +452,7 @@ impl<T: Scalar> SparseMatrix<T> {
         for ((row, col), val) in triplets {
             self.values.insert((col, row), val);
         }
-        self.compressed_updated = false;
+        self.invalidate();
     }
 
     /// Removes any stored entries equal to zero.
@@ -449,7 +465,7 @@ impl<T: Scalar> SparseMatrix<T> {
         self.values.retain(|_, v| *v != T::zero());
         let final_len = self.values.len();
         if init_len != final_len {
-            self.compressed_updated = false;
+            self.invalidate();
         }
     }
 }

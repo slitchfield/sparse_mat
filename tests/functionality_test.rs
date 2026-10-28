@@ -611,3 +611,59 @@ fn sparsemat_complex_elements() {
     assert!(sum.peek_at(0, 1) == Ok(Some(Complex::new(0.0, 2.0))));
     assert!(local.create_transpose().peek_at(1, 0) == Ok(Some(i)));
 }
+
+#[test]
+fn sparsemat_compressed_csc() {
+    let mut local = SparseMatrix::from_triplets(
+        4,
+        6,
+        vec![
+            (0, 0, 10.0),
+            (0, 1, 20.0),
+            (1, 1, 30.0),
+            (2, 2, 50.0),
+            (1, 3, 40.0),
+            (2, 3, 60.0),
+            (2, 4, 70.0),
+            (3, 5, 80.0),
+        ],
+    )
+    .unwrap();
+    assert!(local.compressed_csc().is_none());
+    local.explicitly_compress_csc();
+
+    let csc = local.compressed_csc().unwrap();
+    assert!(csc.cols == vec![0, 1, 3, 4, 6, 7, 8]);
+    assert!(csc.rows == vec![0, 0, 1, 2, 1, 2, 2, 3]);
+    assert!(csc.data == vec![10.0, 20.0, 30.0, 50.0, 40.0, 60.0, 70.0, 80.0]);
+    // CSR was not built as a side effect
+    assert!(local.compressed().is_none());
+
+    local.insert(3, 0, 1.0).unwrap();
+    assert!(local.compressed_csc().is_none());
+}
+
+#[test]
+fn sparsemat_csc_matches_transpose_csr() {
+    let mut local = SparseMatrix::from_triplets(
+        3,
+        5,
+        vec![
+            (0, 4, 1.0),
+            (2, 0, 2.0),
+            (1, 1, 3.0),
+            (2, 4, 4.0),
+            (0, 0, 5.0),
+        ],
+    )
+    .unwrap();
+    local.explicitly_compress_csc();
+    let mut transposed = local.create_transpose();
+    transposed.explicitly_compress();
+
+    let csc = local.compressed_csc().unwrap();
+    let csr = transposed.compressed().unwrap();
+    assert!(csc.cols == csr.rows);
+    assert!(csc.rows == csr.cols);
+    assert!(csc.data == csr.data);
+}
