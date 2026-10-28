@@ -23,6 +23,13 @@ pub enum SparseError {
         /// The length of the offending row.
         found: usize,
     },
+    /// The operands' shapes are incompatible for the operation.
+    ShapeMismatch {
+        /// The shape `(rows, cols)` of the left operand.
+        left: (usize, usize),
+        /// The shape `(rows, cols)` of the right operand.
+        right: (usize, usize),
+    },
 }
 
 /// Formats a short, lowercase description of the error.
@@ -38,6 +45,9 @@ impl fmt::Display for SparseError {
                 found,
             } => {
                 write!(f, "row {row} has length {found}, expected {expected}")
+            }
+            SparseError::ShapeMismatch { left, right } => {
+                write!(f, "incompatible shapes {left:?} and {right:?}")
             }
         }
     }

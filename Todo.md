@@ -16,9 +16,9 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
     - [x] `to_dense`
 - [x] **`empty_with_shape` over-reserves:** it reserves `n * m / 4` entries, which can overflow or attempt a huge allocation for large sparse shapes.
 - [x] **Explicit zeros:** nothing stops `insert(r, c, 0.0)` or `Add` from storing zeros. There's no `prune()` or `drop_zeros()`, and `num_nonzero` over-counts as a result.
-- [ ] **Result-based errors:** the TODOs already note that the `assert!`s should become `Result`.
+- [x] **Result-based errors:** the TODOs already note that the `assert!`s should become `Result`.
     - [x] **OOB Errors:** Translate `assert!`s into results for OOB errors
-    - [ ] **Shape Mismatch Errors:** The same applies to shape mismatches in `Add`.
+    - [x] **Shape Mismatch Errors:** The same applies to shape mismatches in `Add`.
 
 ## Access and iteration
 - [ ] **Stored-entry iterator:** an iterator over `(row, col, val)` triplets. Today `row_iter` only yields dense rows, which defeats the purpose for large matrices.

@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use crate::sparse_error::SparseError;
 use crate::Scalar;
 
+mod ops;
+
 /// A sparse matrix of `T` values (`f64` by default; any [`Scalar`](crate::Scalar) type works).
 ///
 /// Entries live in a dictionary of keys (a `HashMap` from `(row, col)` to value), which
@@ -497,43 +499,5 @@ impl<T: Scalar + fmt::Display> fmt::Display for SparseMatrix<T> {
         }
         write!(f, "/")?;
         writeln!(f)
-    }
-}
-
-use std::ops::Add;
-
-/// Element-wise sum of two matrices, returned as a new matrix.
-///
-/// Entries that cancel to exactly zero are not stored in the result.
-///
-/// # Panics
-///
-/// Panics if the two matrices have different shapes.
-impl<T: Scalar> Add for &SparseMatrix<T> {
-    type Output = SparseMatrix<T>;
-
-    fn add(self, other: &SparseMatrix<T>) -> SparseMatrix<T> {
-        assert!(self.shape == other.shape);
-        let mut local = self.clone();
-
-        for ((rother, cother), elemother) in other.values.iter() {
-            // RESULT UNWRAP: shape validated above, so rother, cother in bounds
-            let existingval = local
-                .peek_at(*rother, *cother)
-                .unwrap()
-                .unwrap_or(T::zero());
-            // See if new value for r, c would be exactly zero
-            let newval = existingval + *elemother;
-            // TODO: zero check here is redundant with zero check in local.insert(). Evaluate removal
-            if newval == T::zero() {
-                // Don't insert, and also clear whatever value already exists at local
-                // UNWRAP: validated shapes above, rother cother safe by construction
-                local.clear_at(*rother, *cother).unwrap();
-            } else {
-                // Unwrap safe by construction of rother, cother
-                local.insert(*rother, *cother, newval).unwrap();
-            }
-        }
-        local
     }
 }

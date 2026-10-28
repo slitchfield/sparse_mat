@@ -667,3 +667,35 @@ fn sparsemat_csc_matches_transpose_csr() {
     assert!(csc.rows == csr.cols);
     assert!(csc.data == csr.data);
 }
+
+#[test]
+fn sparsemat_try_add_shape_mismatch() {
+    let local = SparseMatrix::<f64>::empty_with_shape(3, 3);
+    let local2 = SparseMatrix::<f64>::empty_with_shape(2, 4);
+    assert!(
+        local.try_add(&local2).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (3, 3),
+                right: (2, 4)
+            })
+    );
+}
+
+#[test]
+fn sparsemat_try_add_matches_operator() {
+    let local = SparseMatrix::from_triplets(2, 2, vec![(0, 0, 1.5), (1, 1, 2.0)]).unwrap();
+    let local2 = SparseMatrix::from_triplets(2, 2, vec![(0, 0, -1.5), (0, 1, 1.0)]).unwrap();
+    let sum = local.try_add(&local2).unwrap();
+    assert!(sum.to_dense() == (&local + &local2).to_dense());
+    assert!(sum.num_nonzero() == 2);
+    // Operands are untouched
+    assert!(local.peek_at(0, 0) == Ok(Some(1.5)));
+}
+
+#[test]
+#[should_panic(expected = "incompatible shapes")]
+fn sparsemat_add_shape_mismatch_message() {
+    let local = SparseMatrix::<f64>::empty_with_shape(3, 3);
+    let local2 = SparseMatrix::<f64>::empty_with_shape(2, 2);
+    let _ = &local + &local2;
+}
