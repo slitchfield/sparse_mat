@@ -386,3 +386,71 @@ fn sparsemat_prune_zeroes_noop() {
     assert!(local.num_nonzero() == 2);
     assert!(local.compressed().is_some());
 }
+
+#[test]
+fn sparsemat_from_triplets_basic() {
+    let local = SparseMatrix::from_triplets(3, 4, vec![(0, 0, 1.0), (2, 3, 7.0)]).unwrap();
+    assert!(local.shape == (3, 4));
+    assert!(local.peek_at(0, 0) == Ok(Some(1.0)));
+    assert!(local.peek_at(2, 3) == Ok(Some(7.0)));
+    assert!(local.peek_at(1, 1) == Ok(None));
+    assert!(local.num_nonzero() == 2);
+    assert!(local.compressed().is_none());
+}
+
+#[test]
+fn sparsemat_from_triplets_sums_duplicates() {
+    let local =
+        SparseMatrix::from_triplets(2, 2, vec![(0, 0, 1.0), (1, 1, 4.0), (0, 0, 2.5)]).unwrap();
+    assert!(local.peek_at(0, 0) == Ok(Some(3.5)));
+    assert!(local.num_nonzero() == 2);
+}
+
+#[test]
+fn sparsemat_from_triplets_cancellation_removed() {
+    let local = SparseMatrix::from_triplets(2, 2, vec![(1, 1, 5.0), (1, 1, -5.0)]).unwrap();
+    assert!(local.peek_at(1, 1) == Ok(None));
+    assert!(local.num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_from_triplets_skips_zero_inputs() {
+    let local = SparseMatrix::from_triplets(2, 2, vec![(0, 0, 0.0), (1, 0, 2.0)]).unwrap();
+    assert!(local.peek_at(0, 0) == Ok(None));
+    assert!(local.num_nonzero() == 1);
+}
+
+#[test]
+fn sparsemat_from_triplets_oob() {
+    let result = SparseMatrix::from_triplets(3, 3, vec![(0, 0, 1.0), (4, 4, 2.0)]);
+    assert!(
+        result.err()
+            == Some(SparseError::OutOfBounds {
+                row: 4,
+                col: 4,
+                shape: (3, 3)
+            })
+    );
+}
+
+#[test]
+fn sparsemat_from_triplets_empty() {
+    let local = SparseMatrix::from_triplets(3, 5, vec![]).unwrap();
+    assert!(local.shape == (3, 5));
+    assert!(local.num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_from_triplets_huge_shape() {
+    // Capacity must come from the triplet count, not rows * cols
+    let local = SparseMatrix::from_triplets(1 << 32, 1 << 32, [(0, 0, 1.0)]).unwrap();
+    assert!(local.num_nonzero() == 1);
+}
+
+#[test]
+fn sparsemat_from_triplets_row_iter() {
+    let local =
+        SparseMatrix::from_triplets(2, 3, vec![(0, 2, 1.0), (1, 0, 2.0), (0, 2, 1.0)]).unwrap();
+    let rows: Vec<Vec<f64>> = local.row_iter().collect();
+    assert!(rows == vec![vec![0.0, 0.0, 2.0], vec![2.0, 0.0, 0.0]]);
+}

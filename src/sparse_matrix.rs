@@ -177,6 +177,51 @@ impl SparseMatrix {
         }
     }
 
+    fn from_values(shape: (u64, u64), values: HashMap<(u64, u64), f64>) -> SparseMatrix {
+        SparseMatrix {
+            shape,
+            values,
+            compressed_updated: false,
+            compressed_rowarray: vec![],
+            compressed_colarray: vec![],
+            compressed_dataarray: vec![],
+        }
+    }
+
+    /// Builds a matrix from `(row, col, value)` triplets using **COO (coordinate list)
+    /// semantics**: triplets that share a `(row, col)` are *summed*, not overwritten, and
+    /// entries that sum to exactly zero are not stored. Compare `insert_triplets`, which
+    /// overwrites duplicates (last write wins).
+    ///
+    /// Returns `SparseError::OutOfBounds` if any triplet lies outside `rows x cols`.
+    #[allow(dead_code)]
+    pub fn from_triplets(
+        rows: u64,
+        cols: u64,
+        // COO semantics: duplicate (row, col) entries are summed
+        triplets: impl IntoIterator<Item = (u64, u64, f64)>,
+    ) -> Result<SparseMatrix, SparseError> {
+        let triplets = triplets.into_iter();
+        // Sized by the number of triplets, not rows * cols, which can be enormous
+        let mut values = HashMap::with_capacity(triplets.size_hint().0);
+
+        for (row, col, val) in triplets {
+            if row >= rows || col >= cols {
+                return Err(SparseError::OutOfBounds {
+                    row,
+                    col,
+                    shape: (rows, cols),
+                });
+            }
+            *values.entry((row, col)).or_insert(0.0) += val;
+        }
+
+        let mut local = SparseMatrix::from_values((rows, cols), values);
+        // Zero inputs and exact cancellations leave stored zeros; drop them
+        local.prune_zeroes();
+        Ok(local)
+    }
+
     #[allow(dead_code)]
     pub fn identity(n: u64) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(n, n);
@@ -218,6 +263,8 @@ impl SparseMatrix {
         Ok(())
     }
 
+    /// Duplicate `(row, col)` triplets overwrite (last write wins). See `from_triplets`
+    /// for COO semantics, where duplicates are summed.
     #[allow(dead_code)]
     pub fn insert_triplets(&mut self, triplets: Vec<(u64, u64, f64)>) -> Result<(), SparseError> {
         // Iterate through triplets first to validate no oob errors before changing

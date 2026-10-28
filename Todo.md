@@ -8,7 +8,13 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 - [ ] **Element-wise ops:** Hadamard product, and `map`/`apply` over stored values.
 
 ## Construction and conversion
-- [ ] **Bulk constructors:** `from_triplets` that sums duplicates (COO semantics, where `insert_triplets` silently overwrites them), `from_dense`, `from_csr`, `diagonal(vec)`, and `to_dense`.
+- [ ] **Bulk constructors:**
+    - [x] `from_triplets` that sums duplicates (COO semantics, where `insert_triplets` silently overwrites them)
+    - [ ] `from_dense`
+    - [ ] `from_csr`
+    - [ ] `diagonal(vec)`
+    - [ ] `to_dense`
+- [ ] **`empty_with_shape` over-reserves:** it reserves `n * m / 4` entries, which can overflow or attempt a huge allocation for large sparse shapes.
 - [x] **Explicit zeros:** nothing stops `insert(r, c, 0.0)` or `Add` from storing zeros. There's no `prune()` or `drop_zeros()`, and `num_nonzero` over-counts as a result.
 - [ ] **Result-based errors:** the TODOs already note that the `assert!`s should become `Result`.
     - [x] **OOB Errors:** Translate `assert!`s into results for OOB errors
