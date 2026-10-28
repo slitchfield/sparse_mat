@@ -1898,3 +1898,207 @@ fn sparsemat_conjugate_gradient_edge_cases() {
     );
     assert!(identity.conjugate_gradient(&[1.0], 1e-12, 10).is_err());
 }
+
+const SAMPLE_MTX: &str = "%%MatrixMarket matrix coordinate real general
+% A 3x4 example
+3 4 4
+
+1 1 1.5
+% a comment between entries
+2 3 -2
+3 4 1e2
+3 1 0.25
+";
+
+#[test]
+fn sparsemat_matrix_market_read() {
+    let local = SparseMatrix::<f64>::from_matrix_market(SAMPLE_MTX).unwrap();
+    assert!(local.shape == (3, 4));
+    assert!(local.num_nonzero() == 4);
+    assert!(local[(0, 0)] == 1.5);
+    assert!(local[(1, 2)] == -2.0);
+    assert!(local[(2, 3)] == 100.0);
+    assert!(local[(2, 0)] == 0.25);
+}
+
+#[test]
+fn sparsemat_matrix_market_round_trip() {
+    for seed in [1u64, 2, 3] {
+        let original = pseudo_random(7, 5, seed, 40);
+        let text = original.to_matrix_market();
+        assert!(text.starts_with("%%MatrixMarket matrix coordinate real general\n"));
+        assert!(SparseMatrix::<f64>::from_matrix_market(&text).unwrap() == original);
+    }
+}
+
+#[test]
+fn sparsemat_matrix_market_round_trip_exact_floats() {
+    let original = SparseMatrix::from_triplets(
+        2,
+        2,
+        vec![
+            (0, 0, 0.1 + 0.2),
+            (1, 1, 1.0 / 3.0),
+            (0, 1, 1e-300),
+            (1, 0, -6.02e23),
+        ],
+    )
+    .unwrap();
+    let parsed = SparseMatrix::<f64>::from_matrix_market(&original.to_matrix_market()).unwrap();
+    assert!(parsed == original);
+}
+
+#[test]
+fn sparsemat_matrix_market_write_format() {
+    let local = SparseMatrix::from([[0.0, 2.5], [3.0, 0.0]]);
+    assert!(
+        local.to_matrix_market()
+            == "%%MatrixMarket matrix coordinate real general\n2 2 2\n1 2 2.5\n2 1 3\n"
+    );
+    let mut bytes = vec![];
+    local.write_matrix_market(&mut bytes).unwrap();
+    assert!(String::from_utf8(bytes).unwrap() == local.to_matrix_market());
+}
+
+#[test]
+fn sparsemat_matrix_market_integer_and_pattern() {
+    let ints = "%%MatrixMarket matrix coordinate integer general\n2 2 2\n1 1 7\n2 2 -3\n";
+    let local = SparseMatrix::<i32>::from_matrix_market(ints).unwrap();
+    assert!(local.to_dense() == vec![vec![7, 0], vec![0, -3]]);
+    assert!(local.to_matrix_market().contains("2 2 -3"));
+
+    let pattern = "%%MatrixMarket matrix coordinate pattern general\n2 3 2\n1 3\n2 1\n";
+    let local = SparseMatrix::<f64>::from_matrix_market(pattern).unwrap();
+    assert!(local.to_dense() == vec![vec![0.0, 0.0, 1.0], vec![1.0, 0.0, 0.0]]);
+}
+
+#[test]
+fn sparsemat_matrix_market_symmetric_and_skew() {
+    let symmetric = "%%MatrixMarket matrix coordinate real symmetric\n3 3 3\n1 1 4\n2 1 1\n3 2 2\n";
+    let local = SparseMatrix::<f64>::from_matrix_market(symmetric).unwrap();
+    assert!(local.is_symmetric());
+    assert!(local[(0, 1)] == 1.0 && local[(1, 2)] == 2.0 && local.num_nonzero() == 5);
+
+    let skew = "%%MatrixMarket matrix coordinate real skew-symmetric\n2 2 1\n2 1 5\n";
+    let local = SparseMatrix::<f64>::from_matrix_market(skew).unwrap();
+    assert!(local[(1, 0)] == 5.0 && local[(0, 1)] == -5.0);
+}
+
+#[test]
+fn sparsemat_matrix_market_sums_duplicates_and_drops_zeros() {
+    let text =
+        "%%MatrixMarket matrix coordinate real general\n2 2 4\n1 1 1\n1 1 2\n2 2 5\n2 2 -5\n";
+    let local = SparseMatrix::<f64>::from_matrix_market(text).unwrap();
+    assert!(local[(0, 0)] == 3.0 && local.num_nonzero() == 1);
+}
+
+#[test]
+fn sparsemat_matrix_market_header_is_case_insensitive_and_empty_matrices() {
+    let text = "%%matrixmarket MATRIX Coordinate Real General\n0 0 0\n";
+    let local = SparseMatrix::<f64>::from_matrix_market(text).unwrap();
+    assert!(local.shape == (0, 0));
+
+    let empty = SparseMatrix::<f64>::empty_with_shape(3, 2);
+    let parsed = SparseMatrix::<f64>::from_matrix_market(&empty.to_matrix_market()).unwrap();
+    assert!(parsed.shape == (3, 2) && parsed.num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_matrix_market_read_from_reader() {
+    let bytes = SAMPLE_MTX.as_bytes();
+    let local = SparseMatrix::<f64>::read_matrix_market(std::io::BufReader::new(bytes)).unwrap();
+    assert!(local.num_nonzero() == 4);
+}
+
+fn parse_failure(text: &str) -> (usize, String) {
+    match SparseMatrix::<f64>::from_matrix_market(text).err() {
+        Some(SparseError::Parse { line, message }) => (line, message),
+        other => panic!("expected a parse error, got {other:?}"),
+    }
+}
+
+#[test]
+fn sparsemat_matrix_market_errors() {
+    assert!(parse_failure("").1 == "empty input");
+    assert!(parse_failure("not a header\n1 1 0\n").0 == 1);
+    assert!(
+        parse_failure("%%MatrixMarket matrix array real general\n1 1\n1\n")
+            .1
+            .contains("unsupported format")
+    );
+    assert!(
+        parse_failure("%%MatrixMarket matrix coordinate complex general\n1 1 0\n")
+            .1
+            .contains("unsupported field")
+    );
+    assert!(
+        parse_failure("%%MatrixMarket matrix coordinate real hermitian\n1 1 0\n")
+            .1
+            .contains("unsupported symmetry")
+    );
+    assert!(
+        parse_failure("%%MatrixMarket matrix coordinate real general\n")
+            .1
+            .contains("missing size line")
+    );
+    assert!(
+        parse_failure("%%MatrixMarket matrix coordinate real general\n2 2\n")
+            .1
+            .contains("size line")
+    );
+    assert!(
+        parse_failure("%%MatrixMarket matrix coordinate real general\nx 2 1\n")
+            .1
+            .contains("invalid size")
+    );
+}
+
+#[test]
+fn sparsemat_matrix_market_entry_errors_name_the_line() {
+    let header = "%%MatrixMarket matrix coordinate real general\n2 2 1\n";
+    // Row index 0 (1-based files start at 1), past the end, and unparsable
+    assert!(
+        parse_failure(&format!("{header}0 1 1\n"))
+            == (3, "row index '0' out of range 1..=2".to_string())
+    );
+    assert!(parse_failure(&format!("{header}1 3 1\n"))
+        .1
+        .contains("column index '3'"));
+    assert!(parse_failure(&format!("{header}1 1 abc\n"))
+        .1
+        .contains("invalid value 'abc'"));
+    assert!(parse_failure(&format!("{header}1 1\n"))
+        .1
+        .contains("expected 3 fields"));
+    // Count mismatches
+    assert!(parse_failure(&format!("{header}\n"))
+        .1
+        .contains("expected 1 entries, found 0"));
+    assert!(parse_failure(&format!("{header}1 1 1\n2 2 2\n"))
+        .1
+        .contains("more than 1 entries"));
+}
+
+#[test]
+fn sparsemat_matrix_market_io_error_is_reported() {
+    struct FailingReader;
+    impl std::io::Read for FailingReader {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("disk on fire"))
+        }
+    }
+    let result = SparseMatrix::<f64>::read_matrix_market(std::io::BufReader::new(FailingReader));
+    assert!(matches!(result, Err(SparseError::Io { message }) if message.contains("disk on fire")));
+
+    struct FailingWriter;
+    impl std::io::Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("no space"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let result = SparseMatrix::<f64>::identity(2).write_matrix_market(FailingWriter);
+    assert!(matches!(result, Err(SparseError::Io { message }) if message.contains("no space")));
+}

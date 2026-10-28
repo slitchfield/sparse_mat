@@ -6,6 +6,7 @@ use crate::Scalar;
 
 mod access;
 mod blocks;
+mod matrix_market;
 mod ops;
 mod product;
 mod properties;

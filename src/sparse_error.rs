@@ -66,6 +66,18 @@ pub enum SparseError {
         /// How many iterations were run.
         iterations: usize,
     },
+    /// Text being read is not valid Matrix Market.
+    Parse {
+        /// The 1-based line number the problem was found on.
+        line: usize,
+        /// What is wrong.
+        message: String,
+    },
+    /// Reading or writing failed.
+    Io {
+        /// The underlying error's message.
+        message: String,
+    },
     /// The result's dimensions do not fit in a `usize`.
     ShapeOverflow,
     /// The operands' shapes are incompatible for the operation.
@@ -113,6 +125,10 @@ impl fmt::Display for SparseError {
             SparseError::NoConvergence { iterations } => {
                 write!(f, "no convergence after {iterations} iterations")
             }
+            SparseError::Parse { line, message } => {
+                write!(f, "line {line}: {message}")
+            }
+            SparseError::Io { message } => write!(f, "i/o error: {message}"),
             SparseError::ShapeOverflow => {
                 write!(f, "result dimensions overflow usize")
             }
