@@ -8,20 +8,20 @@ pub enum SparseError {
     /// An index lies outside the matrix.
     OutOfBounds {
         /// The offending row index.
-        row: u64,
+        row: usize,
         /// The offending column index.
-        col: u64,
+        col: usize,
         /// The shape `(rows, cols)` of the matrix the index was checked against.
-        shape: (u64, u64),
+        shape: (usize, usize),
     },
     /// Dense input rows do not all have the same length.
     RaggedRows {
         /// The first row whose length differs from the first row's.
-        row: u64,
+        row: usize,
         /// The length of the first row, which every row must match.
-        expected: u64,
+        expected: usize,
         /// The length of the offending row.
-        found: u64,
+        found: usize,
     },
 }
 

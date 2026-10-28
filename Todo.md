@@ -30,7 +30,7 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 
 ## Storage
 - [ ] **Real compressed storage:** the file's header comment already plans a move to CSR and CSC. CSC would make column access and `Aᵀ·x` cheap.
-- [ ] **Dimension type:** `u64` dimensions are cast to `usize` throughout, and `empty_with_shape` computes `n * m / 4`, which can overflow. `usize` would be more idiomatic.
+- [x] **Dimension type:** `u64` dimensions are cast to `usize` throughout, and `empty_with_shape` computes `n * m / 4`, which can overflow. `usize` would be more idiomatic.
 
 ## Properties and reductions
 - [ ] `trace`, `sum`, norms (Frobenius, 1, ∞), `density`, `is_symmetric`, and `is_square`.

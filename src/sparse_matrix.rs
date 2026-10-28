@@ -14,16 +14,16 @@ use crate::sparse_error::SparseError;
 #[derive(Clone)]
 pub struct SparseMatrix {
     /// The matrix dimensions as `(rows, cols)`.
-    pub shape: (u64, u64),
+    pub shape: (usize, usize),
     /// The stored (non-zero) entries, keyed by `(row, col)`.
-    values: HashMap<(u64, u64), f64>,
+    values: HashMap<(usize, usize), f64>,
 
     /// Whether the `compressed_*` arrays reflect the current `values`.
     compressed_updated: bool,
     /// Cached CSR row pointers (`rows + 1` entries once built).
-    compressed_rowarray: Vec<u64>,
+    compressed_rowarray: Vec<usize>,
     /// Cached CSR column indices, sorted within each row.
-    compressed_colarray: Vec<u64>,
+    compressed_colarray: Vec<usize>,
     /// Cached CSR values, parallel to `compressed_colarray`.
     compressed_dataarray: Vec<f64>,
 }
@@ -32,9 +32,9 @@ pub struct SparseMatrix {
 /// `SparseMatrix::compressed`.
 pub struct CsrView<'a> {
     /// Row pointers: row `i`'s entries are `cols[rows[i]..rows[i + 1]]`.
-    pub rows: &'a [u64],
+    pub rows: &'a [usize],
     /// Column index of each stored entry, sorted within each row.
-    pub cols: &'a [u64],
+    pub cols: &'a [usize],
     /// Value of each stored entry, parallel to `cols`.
     pub data: &'a [f64],
 }
@@ -42,9 +42,9 @@ pub struct CsrView<'a> {
 /// Standalone CSR arrays, built without touching the matrix's cached copy.
 struct Csr {
     /// Row pointers (`rows + 1` entries).
-    rows: Vec<u64>,
+    rows: Vec<usize>,
     /// Column index of each stored entry, sorted within each row.
-    cols: Vec<u64>,
+    cols: Vec<usize>,
     /// Value of each stored entry, parallel to `cols`.
     data: Vec<f64>,
 }
@@ -64,7 +64,7 @@ impl Iterator for RowIterator<'_> {
     type Item = Vec<f64>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.row_iter_idx < self.matrix.shape.0 as usize {
+        if self.row_iter_idx < self.matrix.shape.0 {
             let (rows, cols, data) = match &self.owned {
                 Some(csr) => (&csr.rows, &csr.cols, &csr.data),
                 None => (
@@ -73,16 +73,16 @@ impl Iterator for RowIterator<'_> {
                     &self.matrix.compressed_dataarray,
                 ),
             };
-            let start = rows[self.row_iter_idx] as usize;
-            let end = rows[self.row_iter_idx + 1] as usize;
+            let start = rows[self.row_iter_idx];
+            let end = rows[self.row_iter_idx + 1];
 
             let colslice = &cols[start..end];
             let dataslice = &data[start..end];
 
-            let mut retvec: Vec<f64> = vec![0.0; self.matrix.shape.1 as usize];
+            let mut retvec: Vec<f64> = vec![0.0; self.matrix.shape.1];
 
             for (col, val) in std::iter::zip(colslice, dataslice) {
-                retvec[*col as usize] = *val;
+                retvec[*col] = *val;
             }
 
             self.row_iter_idx += 1;
@@ -104,16 +104,16 @@ impl SparseMatrix {
     /// Builds CSR arrays from `values` without modifying the cache.
     fn build_csr(&self) -> Csr {
         // Create row vecs that we'll sort by col
-        let mut row_vecs: Vec<Vec<(u64, f64)>> = vec![];
+        let mut row_vecs: Vec<Vec<(usize, f64)>> = vec![];
         for _ in 0..self.shape.0 {
             row_vecs.push(vec![]);
         }
 
         for ((row, col), val) in self.values.iter() {
-            row_vecs[*row as usize].push((*col, *val));
+            row_vecs[*row].push((*col, *val));
         }
-        for rowidx in 0..self.shape.0 {
-            row_vecs[rowidx as usize].sort_by_key(|a| a.0);
+        for row in row_vecs.iter_mut() {
+            row.sort_by_key(|a| a.0);
         }
 
         let mut csr = Csr {
@@ -126,7 +126,7 @@ impl SparseMatrix {
                 csr.cols.push(col);
                 csr.data.push(val);
             }
-            csr.rows.push(csr.data.len() as u64);
+            csr.rows.push(csr.data.len());
         }
         csr
     }
@@ -195,7 +195,7 @@ impl SparseMatrix {
 
     /// Creates an `n x m` matrix with no stored entries.
     #[allow(dead_code)]
-    pub fn empty_with_shape(n: u64, m: u64) -> SparseMatrix {
+    pub fn empty_with_shape(n: usize, m: usize) -> SparseMatrix {
         // No up-front reservation: n * m says nothing about how many entries a sparse
         //   matrix will hold, and can overflow or be enormous. The map grows as needed.
         SparseMatrix::from_values((n, m), HashMap::new())
@@ -203,7 +203,7 @@ impl SparseMatrix {
 
     /// Wraps an existing entry map in a matrix of the given shape, with a stale cache.
     /// The caller guarantees every key is in bounds and no value is zero.
-    fn from_values(shape: (u64, u64), values: HashMap<(u64, u64), f64>) -> SparseMatrix {
+    fn from_values(shape: (usize, usize), values: HashMap<(usize, usize), f64>) -> SparseMatrix {
         SparseMatrix {
             shape,
             values,
@@ -222,10 +222,10 @@ impl SparseMatrix {
     /// Returns `SparseError::OutOfBounds` if any triplet lies outside `rows x cols`.
     #[allow(dead_code)]
     pub fn from_triplets(
-        rows: u64,
-        cols: u64,
+        rows: usize,
+        cols: usize,
         // COO semantics: duplicate (row, col) entries are summed
-        triplets: impl IntoIterator<Item = (u64, u64, f64)>,
+        triplets: impl IntoIterator<Item = (usize, usize, f64)>,
     ) -> Result<SparseMatrix, SparseError> {
         let triplets = triplets.into_iter();
         // Sized by the number of triplets, not rows * cols, which can be enormous
@@ -261,29 +261,29 @@ impl SparseMatrix {
     ) -> Result<SparseMatrix, SparseError> {
         let mut values = HashMap::new();
         let mut ncols: Option<usize> = None;
-        let mut nrows: u64 = 0;
+        let mut nrows: usize = 0;
 
         for (row_idx, row) in rows.into_iter().enumerate() {
             let row = row.as_ref();
             let expected = *ncols.get_or_insert(row.len());
             if row.len() != expected {
                 return Err(SparseError::RaggedRows {
-                    row: row_idx as u64,
-                    expected: expected as u64,
-                    found: row.len() as u64,
+                    row: row_idx,
+                    expected,
+                    found: row.len(),
                 });
             }
             for (col_idx, &val) in row.iter().enumerate() {
                 // Zeros (including -0.0) are never stored
                 if val != 0.0f64 {
-                    values.insert((row_idx as u64, col_idx as u64), val);
+                    values.insert((row_idx, col_idx), val);
                 }
             }
             nrows += 1;
         }
 
         Ok(SparseMatrix::from_values(
-            (nrows, ncols.unwrap_or(0) as u64),
+            (nrows, ncols.unwrap_or(0)),
             values,
         ))
     }
@@ -293,18 +293,18 @@ impl SparseMatrix {
     /// `0 x m` matrix has no rows to carry its column count, so it round-trips as `0 x 0`.
     #[allow(dead_code)]
     pub fn to_dense(&self) -> Vec<Vec<f64>> {
-        let mut dense = vec![vec![0.0; self.shape.1 as usize]; self.shape.0 as usize];
+        let mut dense = vec![vec![0.0; self.shape.1]; self.shape.0];
         for ((row, col), val) in self.values.iter() {
-            dense[*row as usize][*col as usize] = *val;
+            dense[*row][*col] = *val;
         }
         dense
     }
 
     /// Creates the `n x n` identity matrix.
     #[allow(dead_code)]
-    pub fn identity(n: u64) -> SparseMatrix {
+    pub fn identity(n: usize) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(n, n);
-        local.values.reserve(n as usize);
+        local.values.reserve(n);
         for diag_idx in 0..n {
             // Unwrap safe by construction of diag_idx
             local.insert(diag_idx, diag_idx, 1.0).unwrap();
@@ -330,7 +330,7 @@ impl SparseMatrix {
     /// Inserting `0.0` removes the entry instead, since zeros are never stored.
     /// Returns `SparseError::OutOfBounds` if the position is outside the matrix.
     #[allow(dead_code)]
-    pub fn insert(&mut self, row: u64, col: u64, value: f64) -> Result<(), SparseError> {
+    pub fn insert(&mut self, row: usize, col: usize, value: f64) -> Result<(), SparseError> {
         if row >= self.shape.0 || col >= self.shape.1 {
             return Err(SparseError::OutOfBounds {
                 row,
@@ -358,7 +358,10 @@ impl SparseMatrix {
     /// Every triplet is bounds-checked before any is applied, so on
     /// `SparseError::OutOfBounds` the matrix is left unchanged.
     #[allow(dead_code)]
-    pub fn insert_triplets(&mut self, triplets: Vec<(u64, u64, f64)>) -> Result<(), SparseError> {
+    pub fn insert_triplets(
+        &mut self,
+        triplets: Vec<(usize, usize, f64)>,
+    ) -> Result<(), SparseError> {
         // Iterate through triplets first to validate no oob errors before changing
         //   underlying matrix state
         for (row, col, _) in triplets.iter() {
@@ -389,7 +392,7 @@ impl SparseMatrix {
     ///
     /// Returns `SparseError::OutOfBounds` if the position is outside the matrix.
     #[allow(dead_code)]
-    pub fn clear_at(&mut self, row: u64, col: u64) -> Result<Option<f64>, SparseError> {
+    pub fn clear_at(&mut self, row: usize, col: usize) -> Result<Option<f64>, SparseError> {
         if row >= self.shape.0 || col >= self.shape.1 {
             return Err(SparseError::OutOfBounds {
                 row,
@@ -407,7 +410,7 @@ impl SparseMatrix {
     ///
     /// Returns `SparseError::OutOfBounds` if the position is outside the matrix.
     #[allow(dead_code)]
-    pub fn peek_at(&self, row: u64, col: u64) -> Result<Option<f64>, SparseError> {
+    pub fn peek_at(&self, row: usize, col: usize) -> Result<Option<f64>, SparseError> {
         if row >= self.shape.0 || col >= self.shape.1 {
             return Err(SparseError::OutOfBounds {
                 row,
@@ -421,8 +424,8 @@ impl SparseMatrix {
 
     /// Returns the number of stored entries.
     #[allow(dead_code)]
-    pub fn num_nonzero(&self) -> u64 {
-        self.values.len() as u64
+    pub fn num_nonzero(&self) -> usize {
+        self.values.len()
     }
 
     /// Transposes the matrix in place, swapping `shape` and every entry's row and column.
@@ -432,7 +435,7 @@ impl SparseMatrix {
         // Naive impl, could do better
         self.shape = (self.shape.1, self.shape.0);
 
-        let triplets: Vec<((u64, u64), f64)> = self.values.drain().collect();
+        let triplets: Vec<((usize, usize), f64)> = self.values.drain().collect();
 
         for ((row, col), val) in triplets {
             self.values.insert((col, row), val);
