@@ -8,11 +8,11 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 - [ ] **Element-wise ops:** Hadamard product, and `map`/`apply` over stored values.
 
 ## Construction and conversion
-- [ ] **Bulk constructors:**
+- [x] **Bulk constructors:**
     - [x] `from_triplets` that sums duplicates (COO semantics, where `insert_triplets` silently overwrites them)
     - [x] `from_dense`
-    - [ ] `from_csr`
-    - [ ] `diagonal(vec)`
+    - [x] `from_csr`
+    - [x] `diagonal(vec)` (named `from_diagonal`, since `diagonal()` reads the diagonal back out)
     - [x] `to_dense`
 - [x] **`empty_with_shape` over-reserves:** it reserves `n * m / 4` entries, which can overflow or attempt a huge allocation for large sparse shapes.
 - [x] **Explicit zeros:** nothing stops `insert(r, c, 0.0)` or `Add` from storing zeros. There's no `prune()` or `drop_zeros()`, and `num_nonzero` over-counts as a result.

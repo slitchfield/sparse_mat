@@ -39,6 +39,11 @@ pub enum SparseError {
         /// The number of rows or columns the range was checked against.
         len: usize,
     },
+    /// Raw CSR arrays are inconsistent with each other or with the requested shape.
+    InvalidCsr {
+        /// What is wrong with the arrays.
+        reason: &'static str,
+    },
     /// The operands' shapes are incompatible for the operation.
     ShapeMismatch {
         /// The shape `(rows, cols)` of the left operand.
@@ -67,6 +72,9 @@ impl fmt::Display for SparseError {
             }
             SparseError::InvalidRange { start, end, len } => {
                 write!(f, "range {start}..{end} invalid for length {len}")
+            }
+            SparseError::InvalidCsr { reason } => {
+                write!(f, "invalid CSR arrays: {reason}")
             }
             SparseError::ShapeMismatch { left, right } => {
                 write!(f, "incompatible shapes {left:?} and {right:?}")

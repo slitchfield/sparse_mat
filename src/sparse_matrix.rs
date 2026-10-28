@@ -321,6 +321,85 @@ impl<T: Scalar> SparseMatrix<T> {
         Ok(Self::from_values((nrows, ncols.unwrap_or(0)), values))
     }
 
+    /// Builds a `rows x cols` matrix from raw CSR arrays: `row_ptr` has `rows + 1`
+    /// non-decreasing entries starting at 0, and row `i`'s entries are
+    /// `col_idx[row_ptr[i]..row_ptr[i + 1]]` with matching `data`, with strictly increasing
+    /// column indices in range.
+    ///
+    /// Zero values are dropped. When there are none, the arrays become the matrix's CSR cache
+    /// directly, so `compressed` is `Some` straight away. Returns `SparseError::InvalidCsr`
+    /// if the arrays are inconsistent.
+    #[allow(dead_code)]
+    pub fn from_csr(
+        rows: usize,
+        cols: usize,
+        row_ptr: Vec<usize>,
+        col_idx: Vec<usize>,
+        data: Vec<T>,
+    ) -> Result<SparseMatrix<T>, SparseError> {
+        let invalid = |reason| Err(SparseError::InvalidCsr { reason });
+        if row_ptr.len() != rows + 1 {
+            return invalid("row_ptr must have rows + 1 entries");
+        }
+        if col_idx.len() != data.len() {
+            return invalid("col_idx and data must have the same length");
+        }
+        if row_ptr[0] != 0 || row_ptr[rows] != col_idx.len() {
+            return invalid("row_ptr must start at 0 and end at the entry count");
+        }
+
+        let mut values = HashMap::with_capacity(data.len());
+        for (row, bounds) in row_ptr.windows(2).enumerate() {
+            if bounds[0] > bounds[1] {
+                return invalid("row_ptr must be non-decreasing");
+            }
+            let mut previous: Option<usize> = None;
+            for (&col, &val) in col_idx[bounds[0]..bounds[1]]
+                .iter()
+                .zip(&data[bounds[0]..bounds[1]])
+            {
+                if col >= cols {
+                    return invalid("column index out of range");
+                }
+                if previous.is_some_and(|prev| prev >= col) {
+                    return invalid("column indices must be strictly increasing within a row");
+                }
+                previous = Some(col);
+                if val != T::zero() {
+                    values.insert((row, col), val);
+                }
+            }
+        }
+
+        let no_zeros = values.len() == data.len();
+        let mut local = Self::from_values((rows, cols), values);
+        if no_zeros {
+            local.csr = Some(Compressed {
+                ptr: row_ptr,
+                idx: col_idx,
+                data,
+            });
+        }
+        Ok(local)
+    }
+
+    /// Builds a square matrix with `diagonal` on its main diagonal. The size is the number of
+    /// items, and zeros are not stored.
+    ///
+    /// Named `from_diagonal` because `diagonal` reads a matrix's diagonal back out.
+    #[allow(dead_code)]
+    pub fn from_diagonal(diagonal: impl IntoIterator<Item = T>) -> SparseMatrix<T> {
+        let mut values = HashMap::new();
+        let mut size = 0;
+        for (i, val) in diagonal.into_iter().enumerate() {
+            if val != T::zero() {
+                values.insert((i, i), val);
+            }
+            size = i + 1;
+        }
+        Self::from_values((size, size), values)
+    }
+
     /// Returns the matrix as dense rows. Allocates `rows * cols` elements, so this is only
     /// suitable for shapes that fit in memory. The inverse of `from_dense`, except that a
     /// `0 x m` matrix has no rows to carry its column count, so it round-trips as `0 x 0`.

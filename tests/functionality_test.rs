@@ -993,3 +993,112 @@ fn sparsemat_into_dense_vecs() {
     let by_value: Vec<Vec<f64>> = local.into();
     assert!(by_value == by_ref);
 }
+
+#[test]
+fn sparsemat_from_csr_basic() {
+    // [[10, 20, 0], [0, 0, 0], [0, 30, 40]]
+    let local = SparseMatrix::from_csr(
+        3,
+        3,
+        vec![0, 2, 2, 4],
+        vec![0, 1, 1, 2],
+        vec![10.0, 20.0, 30.0, 40.0],
+    )
+    .unwrap();
+    assert!(local.shape == (3, 3));
+    assert!(local.num_nonzero() == 4);
+    assert!(local[(2, 1)] == 30.0);
+    assert!(local.to_dense() == vec![vec![10.0, 20.0, 0.0], vec![0.0; 3], vec![0.0, 30.0, 40.0]]);
+    // The arrays were adopted as the CSR cache
+    assert!(local.compressed().unwrap().rows == [0, 2, 2, 4]);
+}
+
+#[test]
+fn sparsemat_from_csr_drops_zeros_and_rebuilds_cache() {
+    let local =
+        SparseMatrix::from_csr(2, 2, vec![0, 2, 3], vec![0, 1, 1], vec![1.0, 0.0, 2.0]).unwrap();
+    assert!(local.num_nonzero() == 2);
+    assert!(local.compressed().is_none());
+    assert!(local.to_dense() == vec![vec![1.0, 0.0], vec![0.0, 2.0]]);
+}
+
+#[test]
+fn sparsemat_from_csr_round_trip() {
+    let mut original = sample_4x6();
+    original.explicitly_compress();
+    let view = original.compressed().unwrap();
+    let rebuilt = SparseMatrix::from_csr(
+        4,
+        6,
+        view.rows.to_vec(),
+        view.cols.to_vec(),
+        view.data.to_vec(),
+    )
+    .unwrap();
+    assert!(rebuilt == original);
+}
+
+#[test]
+fn sparsemat_from_csr_invalid() {
+    let reason = |result: Result<SparseMatrix, SparseError>| match result.err() {
+        Some(SparseError::InvalidCsr { reason }) => reason,
+        other => panic!("expected InvalidCsr, got {other:?}"),
+    };
+    assert!(
+        reason(SparseMatrix::from_csr(2, 2, vec![0, 1], vec![0], vec![1.0]))
+            == "row_ptr must have rows + 1 entries"
+    );
+    assert!(
+        reason(SparseMatrix::from_csr(1, 2, vec![0, 1], vec![0], vec![]))
+            == "col_idx and data must have the same length"
+    );
+    assert!(
+        reason(SparseMatrix::from_csr(1, 2, vec![0, 2], vec![0], vec![1.0]))
+            == "row_ptr must start at 0 and end at the entry count"
+    );
+    assert!(
+        reason(SparseMatrix::from_csr(
+            3,
+            2,
+            vec![0, 2, 1, 2],
+            vec![0, 1],
+            vec![1.0, 2.0]
+        )) == "row_ptr must be non-decreasing"
+    );
+    assert!(
+        reason(SparseMatrix::from_csr(1, 2, vec![0, 1], vec![2], vec![1.0]))
+            == "column index out of range"
+    );
+    assert!(
+        reason(SparseMatrix::from_csr(
+            1,
+            3,
+            vec![0, 2],
+            vec![1, 1],
+            vec![1.0, 2.0]
+        )) == "column indices must be strictly increasing within a row"
+    );
+}
+
+#[test]
+fn sparsemat_from_csr_empty() {
+    let local = SparseMatrix::<f64>::from_csr(0, 0, vec![0], vec![], vec![]).unwrap();
+    assert!(local.shape == (0, 0));
+    let wide = SparseMatrix::<f64>::from_csr(2, 5, vec![0, 0, 0], vec![], vec![]).unwrap();
+    assert!(wide.shape == (2, 5) && wide.num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_from_diagonal() {
+    let local = SparseMatrix::from_diagonal(vec![1.0, 0.0, 3.0]);
+    assert!(local.shape == (3, 3));
+    assert!(local.num_nonzero() == 2);
+    assert!(local.diagonal().to_dense() == vec![1.0, 0.0, 3.0]);
+    assert!(local[(0, 1)] == 0.0);
+
+    let empty = SparseMatrix::<f64>::from_diagonal(Vec::new());
+    assert!(empty.shape == (0, 0));
+
+    let identity = SparseMatrix::from_diagonal([1.0; 4]);
+    assert!(identity == SparseMatrix::identity(4));
+}
