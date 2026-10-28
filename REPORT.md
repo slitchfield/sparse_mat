@@ -154,8 +154,9 @@ Removed a redundant intra-doc link flagged by `cargo doc -D warnings`.
 
 ## Known limitations and things not verified
 
-- **Not pushed, no PR.** The new CI workflow (`./check.sh`) has not run on GitHub; it now needs
-  network access to fetch crates.
+- **CI is unverified at the time of writing.** The workflow now runs `./check.sh`, which fetches
+  crates and runs the suite with and without features; check the PR's status checks for the
+  first real result.
 - **No benchmarks.** `rayon` correctness is tested, but I make no performance claims about it.
 - **LU pivot search is O(n²)** in the dimension (it examines every remaining row per column), and
   `matmul` iterates every row of the left operand, so very tall mostly-empty matrices pay O(rows).
