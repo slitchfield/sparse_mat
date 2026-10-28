@@ -5,6 +5,7 @@ use crate::sparse_error::SparseError;
 use crate::Scalar;
 
 mod access;
+mod blocks;
 mod ops;
 mod product;
 mod properties;

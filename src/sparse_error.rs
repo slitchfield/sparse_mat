@@ -49,6 +49,8 @@ pub enum SparseError {
         /// The shape `(rows, cols)` of the matrix.
         shape: (usize, usize),
     },
+    /// The result's dimensions do not fit in a `usize`.
+    ShapeOverflow,
     /// The operands' shapes are incompatible for the operation.
     ShapeMismatch {
         /// The shape `(rows, cols)` of the left operand.
@@ -83,6 +85,9 @@ impl fmt::Display for SparseError {
             }
             SparseError::NotSquare { shape } => {
                 write!(f, "matrix of shape {shape:?} is not square")
+            }
+            SparseError::ShapeOverflow => {
+                write!(f, "result dimensions overflow usize")
             }
             SparseError::ShapeMismatch { left, right } => {
                 write!(f, "incompatible shapes {left:?} and {right:?}")

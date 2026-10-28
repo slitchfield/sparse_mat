@@ -1539,3 +1539,127 @@ fn sparsemat_norms() {
     assert!(b.norm_1() == b.create_transpose().norm_inf());
     assert!(b.norm_inf() == b.create_transpose().norm_1());
 }
+
+fn dense_kron(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let mut out = vec![];
+    for a_row in a {
+        for b_row in b {
+            out.push(
+                a_row
+                    .iter()
+                    .flat_map(|x| b_row.iter().map(move |y| x * y))
+                    .collect(),
+            );
+        }
+    }
+    out
+}
+
+#[test]
+fn sparsemat_kron_matches_dense() {
+    let a = pseudo_random(3, 2, 5, 60);
+    let b = pseudo_random(2, 4, 6, 60);
+    let product = a.kron(&b).unwrap();
+    assert!(product.shape == (6, 8));
+    assert!(product.to_dense() == dense_kron(&a.to_dense(), &b.to_dense()));
+    assert!(product.num_nonzero() == a.num_nonzero() * b.num_nonzero());
+}
+
+#[test]
+fn sparsemat_kron_identity_is_block_diagonal() {
+    let b = SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]);
+    let block_diag = SparseMatrix::identity(2).kron(&b).unwrap();
+    assert!(
+        block_diag.to_dense()
+            == vec![
+                vec![1.0, 2.0, 0.0, 0.0],
+                vec![3.0, 4.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 2.0],
+                vec![0.0, 0.0, 3.0, 4.0],
+            ]
+    );
+}
+
+#[test]
+fn sparsemat_kron_mixed_product_property() {
+    // (A ⊗ B)(C ⊗ D) = (AC) ⊗ (BD)
+    let (a, b) = (pseudo_random(2, 3, 41, 70), pseudo_random(3, 2, 42, 70));
+    let (c, d) = (pseudo_random(3, 2, 43, 70), pseudo_random(2, 3, 44, 70));
+    let left = &a.kron(&b).unwrap() * &c.kron(&d).unwrap();
+    let right = (&a * &c).kron(&(&b * &d)).unwrap();
+    assert!(left == right);
+}
+
+#[test]
+fn sparsemat_kron_empty_operand_and_overflow() {
+    let a = SparseMatrix::from([[1.0, 2.0]]);
+    let empty = SparseMatrix::<f64>::new();
+    let product = a.kron(&empty).unwrap();
+    assert!(product.shape == (0, 0));
+
+    let huge = SparseMatrix::<f64>::empty_with_shape(usize::MAX, 1);
+    assert!(huge.kron(&huge) == Err(SparseError::ShapeOverflow));
+}
+
+#[test]
+fn sparsemat_hstack_vstack() {
+    let a = SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]);
+    let b = SparseMatrix::from([[5.0], [6.0]]);
+    let wide = SparseMatrix::hstack([&a, &b]).unwrap();
+    assert!(wide.to_dense() == vec![vec![1.0, 2.0, 5.0], vec![3.0, 4.0, 6.0]]);
+
+    let c = SparseMatrix::from([[7.0, 8.0]]);
+    let tall = SparseMatrix::vstack([&a, &c]).unwrap();
+    assert!(tall.to_dense() == vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![7.0, 8.0]]);
+
+    // Owned blocks work too
+    let owned = SparseMatrix::hstack(vec![a.clone(), b.clone()]).unwrap();
+    assert!(owned == wide);
+}
+
+#[test]
+fn sparsemat_stack_reassembles_submatrices() {
+    let original = pseudo_random(5, 6, 55, 45);
+    let left = original.submatrix(0..5, 0..2).unwrap();
+    let right = original.submatrix(0..5, 2..6).unwrap();
+    assert!(SparseMatrix::hstack([&left, &right]).unwrap() == original);
+
+    let top = original.submatrix(0..3, 0..6).unwrap();
+    let bottom = original.submatrix(3..5, 0..6).unwrap();
+    assert!(SparseMatrix::vstack([&top, &bottom]).unwrap() == original);
+}
+
+#[test]
+fn sparsemat_stack_errors_and_empty() {
+    let a = SparseMatrix::<f64>::empty_with_shape(2, 2);
+    let b = SparseMatrix::<f64>::empty_with_shape(3, 1);
+    assert!(
+        SparseMatrix::hstack([&a, &b]).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 2),
+                right: (3, 1)
+            })
+    );
+    assert!(
+        SparseMatrix::vstack([&a, &b]).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 2),
+                right: (3, 1)
+            })
+    );
+
+    let none: [&SparseMatrix; 0] = [];
+    assert!(SparseMatrix::hstack(none).unwrap().shape == (0, 0));
+    assert!(SparseMatrix::vstack(none).unwrap().shape == (0, 0));
+
+    // A single block is returned as is
+    assert!(SparseMatrix::vstack([&a]).unwrap() == a);
+    // Blocks with zero columns still contribute their rows
+    let tall_empty = SparseMatrix::<f64>::empty_with_shape(2, 0);
+    assert!(
+        SparseMatrix::vstack([&tall_empty, &tall_empty])
+            .unwrap()
+            .shape
+            == (4, 0)
+    );
+}
