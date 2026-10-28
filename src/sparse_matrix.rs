@@ -164,17 +164,9 @@ impl SparseMatrix {
 
     #[allow(dead_code)]
     pub fn empty_with_shape(n: u64, m: u64) -> SparseMatrix {
-        let mut value_map = HashMap::new();
-        // TODO: evaluate expected sparsity, add reservation for compressed reps
-        value_map.reserve((n * m / 4) as usize);
-        SparseMatrix {
-            shape: (n, m),
-            values: value_map,
-            compressed_updated: false,
-            compressed_rowarray: vec![],
-            compressed_colarray: vec![],
-            compressed_dataarray: vec![],
-        }
+        // No up-front reservation: n * m says nothing about how many entries a sparse
+        //   matrix will hold, and can overflow or be enormous. The map grows as needed.
+        SparseMatrix::from_values((n, m), HashMap::new())
     }
 
     fn from_values(shape: (u64, u64), values: HashMap<(u64, u64), f64>) -> SparseMatrix {
@@ -225,6 +217,7 @@ impl SparseMatrix {
     #[allow(dead_code)]
     pub fn identity(n: u64) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(n, n);
+        local.values.reserve(n as usize);
         for diag_idx in 0..n {
             // Unwrap safe by construction of diag_idx
             local.insert(diag_idx, diag_idx, 1.0).unwrap();
@@ -235,6 +228,7 @@ impl SparseMatrix {
     #[allow(dead_code)]
     pub fn create_transpose(&self) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(self.shape.1, self.shape.0);
+        local.values.reserve(self.values.len());
         for ((row, col), val) in self.values.iter() {
             // Unwrap safe by construction of col, row
             local.insert(*col, *row, *val).unwrap(); // Deref okay due to elementary r, c, v types

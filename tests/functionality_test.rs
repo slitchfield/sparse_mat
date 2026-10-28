@@ -7,6 +7,14 @@ fn sparsemat_creation() {
 }
 
 #[test]
+fn sparsemat_creation_huge_shape() {
+    // Must not reserve space proportional to rows * cols
+    let mut local = SparseMatrix::empty_with_shape(1 << 32, 1 << 32);
+    local.insert(5, 7, 1.0).unwrap();
+    assert!(local.num_nonzero() == 1);
+}
+
+#[test]
 fn sparsemat_identity_creation() {
     let local = SparseMatrix::identity(3);
     assert!(local.num_nonzero() == 3);
