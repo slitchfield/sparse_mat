@@ -237,3 +237,68 @@ fn sparsemat_good_addition() {
     assert!(local3.peek_at(1, 1) == Some(60.0));
     assert!(local3.peek_at(2, 2) == Some(100.0));
 }
+
+#[test]
+fn sparsemat_insert_zero_into_empty() {
+    let mut local = SparseMatrix::empty_with_shape(3, 3);
+    local.insert(0, 0, 0.0);
+    assert!(local.peek_at(0, 0).is_none());
+    assert!(local.num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_insert_zero_over_existing() {
+    let mut local = SparseMatrix::empty_with_shape(3, 3);
+    local.insert(0, 0, 5.0);
+    local.insert(0, 0, 0.0);
+    assert!(local.peek_at(0, 0).is_none());
+    assert!(local.num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_insert_triplets_zeros() {
+    let mut local = SparseMatrix::empty_with_shape(3, 3);
+    local.insert_triplets(vec![(1, 1, 2.0), (2, 2, 3.0)]);
+    local.insert_triplets(vec![(1, 1, 0.0), (0, 2, 0.0)]);
+    assert!(local.peek_at(1, 1).is_none());
+    assert!(local.peek_at(0, 2).is_none());
+    assert!(local.peek_at(2, 2) == Some(3.0));
+    assert!(local.num_nonzero() == 1);
+}
+
+#[test]
+fn sparsemat_insert_zero_invalidates_compressed() {
+    let mut local = SparseMatrix::empty_with_shape(2, 2);
+    local.insert_triplets(vec![(0, 1, 4.0), (1, 1, 3.0)]);
+    local.explicitly_compress();
+    local.insert(0, 1, 0.0);
+    assert!(local.compressed().is_none());
+
+    let rows: Vec<Vec<f64>> = local.row_iter().collect();
+    assert!(rows == vec![vec![0.0, 0.0], vec![0.0, 3.0]]);
+}
+
+#[test]
+fn sparsemat_addition_cancellation() {
+    let mut local = SparseMatrix::empty_with_shape(2, 2);
+    local.insert_triplets(vec![(0, 0, 1.5), (1, 1, 2.0)]);
+    let mut local2 = SparseMatrix::empty_with_shape(2, 2);
+    local2.insert_triplets(vec![(0, 0, -1.5), (0, 1, 1.0)]);
+
+    let local3 = &local + &local2;
+    assert!(local3.peek_at(0, 0).is_none());
+    assert!(local3.peek_at(0, 1) == Some(1.0));
+    assert!(local3.peek_at(1, 1) == Some(2.0));
+    assert!(local3.num_nonzero() == 2);
+}
+
+#[test]
+fn sparsemat_prune_zeroes_noop() {
+    let mut local = SparseMatrix::empty_with_shape(2, 2);
+    local.insert_triplets(vec![(0, 0, 1.0), (1, 1, 2.0)]);
+    local.explicitly_compress();
+
+    local.prune_zeroes();
+    assert!(local.num_nonzero() == 2);
+    assert!(local.compressed().is_some());
+}

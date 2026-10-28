@@ -199,7 +199,12 @@ impl SparseMatrix {
         assert!(row < self.shape.0);
         assert!(col < self.shape.1);
 
-        self.values.insert((row, col), value);
+        // If new value is exactly zero, clear any existing entry
+        if value == 0.0f64 {
+            self.clear_at(row, col);
+        } else {
+            self.values.insert((row, col), value);
+        }
         self.compressed_updated = false;
     }
 
@@ -209,7 +214,12 @@ impl SparseMatrix {
             assert!(*row < self.shape.0);
             assert!(*col < self.shape.1);
 
-            self.values.insert((*row, *col), *val);
+            // If new value is exactly zero, clear any existing entry
+            if *val == 0.0f64 {
+                self.clear_at(*row, *col);
+            } else {
+                self.values.insert((*row, *col), *val);
+            }
         }
         self.compressed_updated = false;
     }
@@ -248,6 +258,16 @@ impl SparseMatrix {
             self.values.insert((col, row), val);
         }
         self.compressed_updated = false;
+    }
+
+    #[allow(dead_code)]
+    pub fn prune_zeroes(&mut self) {
+        let init_len = self.values.len();
+        self.values.retain(|_, v| *v != 0.0f64);
+        let final_len = self.values.len();
+        if init_len != final_len {
+            self.compressed_updated = false;
+        }
     }
 }
 
@@ -291,7 +311,15 @@ impl Add for &SparseMatrix {
 
         for ((rother, cother), elemother) in other.values.iter() {
             let existingval = local.peek_at(*rother, *cother).unwrap_or(0.0);
-            local.insert(*rother, *cother, existingval + *elemother);
+            // See if new value for r, c would be exactly 0.0
+            let newval = existingval + *elemother;
+            // TODO: zero check here is redundant with zero check in local.insert(). Evaluate removal
+            if newval == 0.0f64 {
+                // Don't insert, and also clear whatever value already exists at local
+                local.clear_at(*rother, *cother);
+            } else {
+                local.insert(*rother, *cother, newval);
+            }
         }
         local
     }
