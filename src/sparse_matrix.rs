@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::sparse_error::SparseError;
+
 /* Starting with Dictionary of Keys impl. To support efficient operations,
      should eventually move to compressed sparse row/col
 */
@@ -179,7 +181,8 @@ impl SparseMatrix {
     pub fn identity(n: u64) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(n, n);
         for diag_idx in 0..n {
-            local.insert(diag_idx, diag_idx, 1.0);
+            // Unwrap safe by construction of diag_idx
+            local.insert(diag_idx, diag_idx, 1.0).unwrap();
         }
         local
     }
@@ -188,58 +191,85 @@ impl SparseMatrix {
     pub fn create_transpose(&self) -> SparseMatrix {
         let mut local = SparseMatrix::empty_with_shape(self.shape.1, self.shape.0);
         for ((row, col), val) in self.values.iter() {
-            local.insert(*col, *row, *val); // Deref okay due to elementary r, c, v types
+            // Unwrap safe by construction of col, row
+            local.insert(*col, *row, *val).unwrap(); // Deref okay due to elementary r, c, v types
         }
         local
     }
 
     #[allow(dead_code)]
-    pub fn insert(&mut self, row: u64, col: u64, value: f64) {
-        // TODO: return result with oob error instead
-        assert!(row < self.shape.0);
-        assert!(col < self.shape.1);
+    pub fn insert(&mut self, row: u64, col: u64, value: f64) -> Result<(), SparseError> {
+        if row >= self.shape.0 || col >= self.shape.1 {
+            return Err(SparseError::OutOfBounds {
+                row,
+                col,
+                shape: self.shape,
+            });
+        }
 
         // If new value is exactly zero, clear any existing entry
         if value == 0.0f64 {
-            self.clear_at(row, col);
+            // UNWRAP: already validated row, col above
+            self.clear_at(row, col).unwrap();
         } else {
             self.values.insert((row, col), value);
         }
         self.compressed_updated = false;
+        Ok(())
     }
 
     #[allow(dead_code)]
-    pub fn insert_triplets(&mut self, triplets: Vec<(u64, u64, f64)>) {
-        for (row, col, val) in triplets.iter() {
-            assert!(*row < self.shape.0);
-            assert!(*col < self.shape.1);
+    pub fn insert_triplets(&mut self, triplets: Vec<(u64, u64, f64)>) -> Result<(), SparseError> {
+        // Iterate through triplets first to validate no oob errors before changing
+        //   underlying matrix state
+        for (row, col, _) in triplets.iter() {
+            if *row >= self.shape.0 || *col >= self.shape.1 {
+                return Err(SparseError::OutOfBounds {
+                    row: *row,
+                    col: *col,
+                    shape: self.shape,
+                });
+            }
+        }
 
+        for (row, col, val) in triplets.iter() {
             // If new value is exactly zero, clear any existing entry
             if *val == 0.0f64 {
-                self.clear_at(*row, *col);
+                // UNWRAP: Already validated row, col above
+                self.clear_at(*row, *col).unwrap();
             } else {
                 self.values.insert((*row, *col), *val);
             }
         }
         self.compressed_updated = false;
+        Ok(())
     }
 
     #[allow(dead_code)]
-    pub fn clear_at(&mut self, row: u64, col: u64) -> Option<f64> {
-        // TODO: return result with oob error instead
-        assert!(row < self.shape.0);
-        assert!(col < self.shape.1);
+    pub fn clear_at(&mut self, row: u64, col: u64) -> Result<Option<f64>, SparseError> {
+        if row >= self.shape.0 || col >= self.shape.1 {
+            return Err(SparseError::OutOfBounds {
+                row,
+                col,
+                shape: self.shape,
+            });
+        }
 
         self.compressed_updated = false;
-        self.values.remove(&(row, col))
+        Ok(self.values.remove(&(row, col)))
     }
 
     #[allow(dead_code)]
-    pub fn peek_at(&self, row: u64, col: u64) -> Option<f64> {
-        assert!(row < self.shape.0);
-        assert!(col < self.shape.1);
+    pub fn peek_at(&self, row: u64, col: u64) -> Result<Option<f64>, SparseError> {
+        if row >= self.shape.0 || col >= self.shape.1 {
+            return Err(SparseError::OutOfBounds {
+                row,
+                col,
+                shape: self.shape,
+            });
+        }
 
-        self.values.get(&(row, col)).copied()
+        Ok(self.values.get(&(row, col)).copied())
     }
 
     #[allow(dead_code)]
@@ -310,15 +340,18 @@ impl Add for &SparseMatrix {
         let mut local = self.clone();
 
         for ((rother, cother), elemother) in other.values.iter() {
-            let existingval = local.peek_at(*rother, *cother).unwrap_or(0.0);
+            // RESULT UNWRAP: shape validated above, so rother, cother in bounds
+            let existingval = local.peek_at(*rother, *cother).unwrap().unwrap_or(0.0);
             // See if new value for r, c would be exactly 0.0
             let newval = existingval + *elemother;
             // TODO: zero check here is redundant with zero check in local.insert(). Evaluate removal
             if newval == 0.0f64 {
                 // Don't insert, and also clear whatever value already exists at local
-                local.clear_at(*rother, *cother);
+                // UNWRAP: validated shapes above, rother cother safe by construction
+                local.clear_at(*rother, *cother).unwrap();
             } else {
-                local.insert(*rother, *cother, newval);
+                // Unwrap safe by construction of rother, cother
+                local.insert(*rother, *cother, newval).unwrap();
             }
         }
         local
