@@ -8,8 +8,12 @@ mod access;
 mod blocks;
 mod matrix_market;
 mod ops;
+#[cfg(feature = "rayon")]
+mod parallel;
 mod product;
 mod properties;
+#[cfg(feature = "serde")]
+mod serde_impl;
 mod solvers;
 mod traits;
 

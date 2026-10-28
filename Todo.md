@@ -40,7 +40,7 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 - [x] **Block operations:** `kron`, `hstack` and `vstack`.
 - [x] **Solvers:** triangular solves, then LU/Cholesky and iterative methods like CG.
 - [x] **File I/O:** Matrix Market (`.mtx`) read and write.
-- [ ] **Optional features:** `serde` and `rayon`.
+- [x] **Optional features:** `serde` and `rayon`.
 
 ## Suggested order
 The matrix-vector product, then the triplet iterator, then `from_triplets` with duplicate summing, then `Sub` and `Mul<f64>`. That set makes the type usable for real work and builds on the CSR path already in place. The `Result` error handling is worth doing early too, since it changes every public signature.
