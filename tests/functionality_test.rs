@@ -1102,3 +1102,119 @@ fn sparsemat_from_diagonal() {
     let identity = SparseMatrix::from_diagonal([1.0; 4]);
     assert!(identity == SparseMatrix::identity(4));
 }
+
+fn sample_2x2() -> SparseMatrix {
+    SparseMatrix::from([[1.0, 2.0], [0.0, 3.0]])
+}
+
+#[test]
+fn sparsemat_subtraction() {
+    let a = sample_2x2();
+    let b = SparseMatrix::from([[1.0, 0.0], [4.0, 3.0]]);
+    let difference = &a - &b;
+    assert!(difference.to_dense() == vec![vec![0.0, 2.0], vec![-4.0, 0.0]]);
+    // Cancelled entries are not stored
+    assert!(difference.num_nonzero() == 2);
+    // Operands untouched
+    assert!(a == sample_2x2());
+}
+
+#[test]
+fn sparsemat_try_sub_shape_mismatch() {
+    let a = sample_2x2();
+    let b = SparseMatrix::<f64>::empty_with_shape(3, 2);
+    assert!(
+        a.try_sub(&b).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 2),
+                right: (3, 2)
+            })
+    );
+}
+
+#[test]
+#[should_panic(expected = "incompatible shapes")]
+fn sparsemat_sub_shape_mismatch_panics() {
+    let _ = &sample_2x2() - &SparseMatrix::<f64>::empty_with_shape(3, 3);
+}
+
+#[test]
+fn sparsemat_owned_operand_combinations() {
+    let expected_sum = vec![vec![2.0, 4.0], vec![0.0, 6.0]];
+    assert!((&sample_2x2() + &sample_2x2()).to_dense() == expected_sum);
+    assert!((sample_2x2() + &sample_2x2()).to_dense() == expected_sum);
+    assert!((&sample_2x2() + sample_2x2()).to_dense() == expected_sum);
+    assert!((sample_2x2() + sample_2x2()).to_dense() == expected_sum);
+
+    assert!((sample_2x2() - sample_2x2()).num_nonzero() == 0);
+    assert!((&sample_2x2() - sample_2x2()).num_nonzero() == 0);
+    assert!((sample_2x2() - &sample_2x2()).num_nonzero() == 0);
+}
+
+#[test]
+fn sparsemat_owned_lhs_invalidates_cache() {
+    let mut a = sample_2x2();
+    a.explicitly_compress();
+    let sum = a + SparseMatrix::from([[0.0, 0.0], [5.0, 0.0]]);
+    assert!(sum.compressed().is_none());
+    assert!(sum[(1, 0)] == 5.0);
+}
+
+#[test]
+fn sparsemat_add_assign_sub_assign() {
+    let mut a = sample_2x2();
+    a += &SparseMatrix::from([[1.0, 0.0], [0.0, 0.0]]);
+    assert!(a[(0, 0)] == 2.0);
+    a += SparseMatrix::from([[0.0, -2.0], [0.0, 0.0]]);
+    assert!(a[(0, 1)] == 0.0 && a.num_nonzero() == 2);
+    a -= &SparseMatrix::from([[2.0, 0.0], [0.0, 3.0]]);
+    assert!(a.num_nonzero() == 0);
+    a -= SparseMatrix::from([[1.0, 0.0], [0.0, 0.0]]);
+    assert!(a[(0, 0)] == -1.0);
+}
+
+#[test]
+#[should_panic(expected = "incompatible shapes")]
+fn sparsemat_add_assign_shape_mismatch_panics() {
+    let mut a = sample_2x2();
+    a += &SparseMatrix::<f64>::empty_with_shape(1, 1);
+}
+
+#[test]
+fn sparsemat_negation() {
+    let a = sample_2x2();
+    let negated = -&a;
+    assert!(negated.to_dense() == vec![vec![-1.0, -2.0], vec![0.0, -3.0]]);
+    assert!(a == sample_2x2());
+    assert!((-sample_2x2()).to_dense() == negated.to_dense());
+    assert!((&a + &negated).num_nonzero() == 0);
+
+    let ints = SparseMatrix::from([[1, 0], [0, -4]]);
+    assert!((-ints).to_dense() == vec![vec![-1, 0], vec![0, 4]]);
+}
+
+#[test]
+fn sparsemat_scalar_multiplication() {
+    let a = sample_2x2();
+    assert!((&a * 2.0).to_dense() == vec![vec![2.0, 4.0], vec![0.0, 6.0]]);
+    assert!((a.clone() * 0.5).to_dense() == vec![vec![0.5, 1.0], vec![0.0, 1.5]]);
+    assert!((2.0 * &a) == (&a * 2.0));
+    assert!((2.0 * a.clone()) == (&a * 2.0));
+    assert!(a.scale(3.0)[(1, 1)] == 9.0);
+
+    // Multiplying by zero leaves nothing stored
+    let zeroed = &a * 0.0;
+    assert!(zeroed.num_nonzero() == 0 && zeroed.shape == (2, 2));
+
+    let mut in_place = sample_2x2();
+    in_place *= 10.0;
+    assert!(in_place[(0, 1)] == 20.0);
+    assert!(a == sample_2x2());
+}
+
+#[test]
+fn sparsemat_scalar_multiplication_integers() {
+    let a = SparseMatrix::from([[1i32, 2], [0, 3]]);
+    assert!((&a * 4).to_dense() == vec![vec![4, 8], vec![0, 12]]);
+    assert!((3i32 * &a).to_dense() == vec![vec![3, 6], vec![0, 9]]);
+}
