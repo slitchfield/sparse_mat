@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use crate::sparse_error::SparseError;
 use crate::Scalar;
 
+mod access;
 mod ops;
+
+pub use access::Entries;
 
 /// A sparse matrix of `T` values (`f64` by default; any [`Scalar`](crate::Scalar) type works).
 ///

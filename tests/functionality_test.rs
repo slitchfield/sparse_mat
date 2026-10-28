@@ -699,3 +699,64 @@ fn sparsemat_add_shape_mismatch_message() {
     let local2 = SparseMatrix::<f64>::empty_with_shape(2, 2);
     let _ = &local + &local2;
 }
+
+#[test]
+fn sparsemat_iter_row_major_order() {
+    let local = SparseMatrix::from_triplets(
+        4,
+        4,
+        vec![
+            (3, 1, 6.0),
+            (0, 3, 2.0),
+            (2, 2, 5.0),
+            (0, 0, 1.0),
+            (3, 0, 9.0),
+        ],
+    )
+    .unwrap();
+    let entries: Vec<(usize, usize, f64)> = local.iter().collect();
+    assert!(
+        entries
+            == vec![
+                (0, 0, 1.0),
+                (0, 3, 2.0),
+                (2, 2, 5.0),
+                (3, 0, 9.0),
+                (3, 1, 6.0)
+            ]
+    );
+}
+
+#[test]
+fn sparsemat_iter_len_and_empty() {
+    let local = SparseMatrix::from_triplets(3, 3, vec![(0, 0, 1.0), (2, 2, 2.0)]).unwrap();
+    let mut entries = local.iter();
+    assert!(entries.len() == 2);
+    entries.next();
+    assert!(entries.len() == 1);
+
+    assert!(SparseMatrix::<f64>::empty_with_shape(5, 5)
+        .iter()
+        .next()
+        .is_none());
+    assert!(SparseMatrix::<f64>::new().iter().count() == 0);
+}
+
+#[test]
+fn sparsemat_iter_compressed_or_not() {
+    let mut local = SparseMatrix::from_triplets(3, 3, vec![(1, 2, 4.0), (0, 1, 3.0)]).unwrap();
+    let before: Vec<_> = local.iter().collect();
+    local.explicitly_compress();
+    let after: Vec<_> = local.iter().collect();
+    assert!(before == after);
+    assert!(before == vec![(0, 1, 3.0), (1, 2, 4.0)]);
+}
+
+#[test]
+fn sparsemat_iter_sparse_cost_on_huge_shape() {
+    let mut local = SparseMatrix::<f64>::empty_with_shape(1 << 20, 1 << 20);
+    local.insert(5, 7, 1.0).unwrap();
+    local.insert(1 << 19, 3, 2.0).unwrap();
+    let entries: Vec<_> = local.iter().collect();
+    assert!(entries == vec![(5, 7, 1.0), (1 << 19, 3, 2.0)]);
+}
