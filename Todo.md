@@ -33,7 +33,7 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 - [x] **Dimension type:** `u64` dimensions are cast to `usize` throughout, and `empty_with_shape` computes `n * m / 4`, which can overflow. `usize` would be more idiomatic.
 
 ## Properties and reductions
-- [ ] `trace`, `sum`, norms (Frobenius, 1, ∞), `density`, `is_symmetric`, and `is_square`.
+- [x] `trace`, `sum`, norms (Frobenius, 1, ∞), `density`, `is_symmetric`, and `is_square`.
 
 ## Further out
 - [x] **Generic scalar type:** `f32`, integers and complex numbers, via `num-traits`.

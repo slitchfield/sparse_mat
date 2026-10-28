@@ -44,6 +44,11 @@ pub enum SparseError {
         /// What is wrong with the arrays.
         reason: &'static str,
     },
+    /// The operation needs a square matrix.
+    NotSquare {
+        /// The shape `(rows, cols)` of the matrix.
+        shape: (usize, usize),
+    },
     /// The operands' shapes are incompatible for the operation.
     ShapeMismatch {
         /// The shape `(rows, cols)` of the left operand.
@@ -75,6 +80,9 @@ impl fmt::Display for SparseError {
             }
             SparseError::InvalidCsr { reason } => {
                 write!(f, "invalid CSR arrays: {reason}")
+            }
+            SparseError::NotSquare { shape } => {
+                write!(f, "matrix of shape {shape:?} is not square")
             }
             SparseError::ShapeMismatch { left, right } => {
                 write!(f, "incompatible shapes {left:?} and {right:?}")

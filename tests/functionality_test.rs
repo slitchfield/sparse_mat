@@ -1476,3 +1476,66 @@ fn sparsemat_scalar_mul_still_works_alongside_matmul() {
     assert!((&a * 2.0).to_dense() == vec![vec![2.0, 4.0], vec![6.0, 8.0]]);
     assert!((&a * &a).to_dense() == vec![vec![7.0, 10.0], vec![15.0, 22.0]]);
 }
+
+#[test]
+fn sparsemat_is_square_and_density() {
+    assert!(SparseMatrix::<f64>::identity(3).is_square());
+    assert!(!SparseMatrix::<f64>::empty_with_shape(2, 3).is_square());
+    assert!(SparseMatrix::<f64>::new().is_square());
+
+    assert!(SparseMatrix::<f64>::identity(4).density() == 0.25);
+    assert!(SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]).density() == 1.0);
+    assert!(SparseMatrix::<f64>::empty_with_shape(3, 3).density() == 0.0);
+    // No division by zero for an empty shape
+    assert!(SparseMatrix::<f64>::new().density() == 0.0);
+    assert!(SparseMatrix::<f64>::empty_with_shape(0, 5).density() == 0.0);
+}
+
+#[test]
+fn sparsemat_sum_and_trace() {
+    let a = SparseMatrix::from([[1.0, 2.0, 0.0], [0.0, 3.0, 4.0], [5.0, 0.0, 6.0]]);
+    assert!(a.sum() == 21.0);
+    assert!(a.trace() == Ok(10.0));
+    assert!(SparseMatrix::<f64>::empty_with_shape(2, 2).sum() == 0.0);
+
+    let ints = SparseMatrix::from([[1, 2], [3, 4]]);
+    assert!(ints.sum() == 10 && ints.trace() == Ok(5));
+}
+
+#[test]
+fn sparsemat_trace_not_square() {
+    let a = SparseMatrix::<f64>::empty_with_shape(2, 3);
+    assert!(a.trace() == Err(SparseError::NotSquare { shape: (2, 3) }));
+}
+
+#[test]
+fn sparsemat_is_symmetric() {
+    assert!(SparseMatrix::from([[1.0, 2.0], [2.0, 3.0]]).is_symmetric());
+    assert!(!SparseMatrix::from([[1.0, 2.0], [5.0, 3.0]]).is_symmetric());
+    // One side stored, the other not
+    assert!(!SparseMatrix::from([[0.0, 2.0], [0.0, 0.0]]).is_symmetric());
+    assert!(!SparseMatrix::<f64>::empty_with_shape(2, 3).is_symmetric());
+    assert!(SparseMatrix::<f64>::identity(5).is_symmetric());
+    assert!(SparseMatrix::<f64>::new().is_symmetric());
+
+    // A + Aᵀ is always symmetric
+    let a = pseudo_random(6, 6, 77, 40);
+    assert!((&a + &a.create_transpose()).is_symmetric());
+}
+
+#[test]
+fn sparsemat_norms() {
+    let a = SparseMatrix::from([[1.0, -2.0, 0.0], [0.0, 3.0, 4.0]]);
+    assert!((a.norm_frobenius() - 30.0f64.sqrt()).abs() < 1e-12);
+    // Column sums: 1, 5, 4 and row sums: 3, 7
+    assert!(a.norm_1() == 5.0);
+    assert!(a.norm_inf() == 7.0);
+
+    let empty = SparseMatrix::<f64>::empty_with_shape(3, 3);
+    assert!(empty.norm_frobenius() == 0.0 && empty.norm_1() == 0.0 && empty.norm_inf() == 0.0);
+
+    // f32 works too, and the norms of a transpose swap the 1- and infinity-norms
+    let b = SparseMatrix::from([[1.0f32, 2.0], [3.0, 4.0]]);
+    assert!(b.norm_1() == b.create_transpose().norm_inf());
+    assert!(b.norm_inf() == b.create_transpose().norm_1());
+}
