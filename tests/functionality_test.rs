@@ -878,3 +878,34 @@ fn sparsemat_submatrix_invalid_range() {
             })
     );
 }
+
+#[test]
+fn sparsemat_index() {
+    let local = sample_4x6();
+    assert!(local[(0, 1)] == 20.0);
+    assert!(local[(3, 5)] == 80.0);
+    // Unstored entries read as zero
+    assert!(local[(1, 0)] == 0.0);
+    assert!(local[(3, 0)] == 0.0);
+}
+
+#[test]
+fn sparsemat_index_integers() {
+    let local = SparseMatrix::from_triplets(2, 2, vec![(0, 1, 7)]).unwrap();
+    assert!(local[(0, 1)] == 7);
+    assert!(local[(1, 1)] == 0);
+}
+
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn sparsemat_index_oob() {
+    let local = sample_4x6();
+    let _ = local[(4, 0)];
+}
+
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn sparsemat_index_oob_col() {
+    let local = sample_4x6();
+    let _ = local[(0, 6)];
+}

@@ -31,6 +31,8 @@ pub struct SparseMatrix<T = f64> {
     csr: Option<Compressed<T>>,
     /// Cached CSC copy of `values`; `None` once any mutation makes it stale.
     csc: Option<Compressed<T>>,
+    /// A zero to hand out by reference for entries that are not stored (see `Index`).
+    zero: T,
 }
 
 /// Borrowed view of the matrix's cached CSR arrays, as returned by
@@ -222,6 +224,7 @@ impl<T: Scalar> SparseMatrix<T> {
             values: HashMap::new(),
             csr: None,
             csc: None,
+            zero: T::zero(),
         }
     }
 
@@ -241,6 +244,7 @@ impl<T: Scalar> SparseMatrix<T> {
             values,
             csr: None,
             csc: None,
+            zero: T::zero(),
         }
     }
 

@@ -1,7 +1,7 @@
 //! Read access to a matrix's stored entries, rows and columns.
 
 use std::borrow::Cow;
-use std::ops::Range;
+use std::ops::{Index, Range};
 
 use super::{Compressed, SparseMatrix};
 use crate::sparse_error::SparseError;
@@ -246,5 +246,23 @@ impl<T: Scalar> SparseMatrix<T> {
             .map(|((row, col), val)| ((row - rows.start, col - cols.start), *val))
             .collect();
         Ok(SparseMatrix::from_values((rows.len(), cols.len()), values))
+    }
+}
+
+/// Reads the element at `(row, col)`, yielding zero for entries that are not stored.
+///
+/// # Panics
+///
+/// Panics if the position is outside the matrix. Use `peek_at` for a checked read.
+impl<T: Scalar> Index<(usize, usize)> for SparseMatrix<T> {
+    type Output = T;
+
+    fn index(&self, (row, col): (usize, usize)) -> &T {
+        assert!(
+            row < self.shape.0 && col < self.shape.1,
+            "index ({row}, {col}) out of bounds for shape {:?}",
+            self.shape
+        );
+        self.values.get(&(row, col)).unwrap_or(&self.zero)
     }
 }
