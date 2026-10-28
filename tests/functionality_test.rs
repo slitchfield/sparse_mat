@@ -1218,3 +1218,53 @@ fn sparsemat_scalar_multiplication_integers() {
     assert!((&a * 4).to_dense() == vec![vec![4, 8], vec![0, 12]]);
     assert!((3i32 * &a).to_dense() == vec![vec![3, 6], vec![0, 9]]);
 }
+
+#[test]
+fn sparsemat_hadamard() {
+    let a = SparseMatrix::from([[1.0, 2.0, 0.0], [0.0, 3.0, 4.0]]);
+    let b = SparseMatrix::from([[5.0, 0.0, 6.0], [0.0, 7.0, 8.0]]);
+    let product = a.hadamard(&b).unwrap();
+    assert!(product.to_dense() == vec![vec![5.0, 0.0, 0.0], vec![0.0, 21.0, 32.0]]);
+    assert!(product.num_nonzero() == 3);
+    // Commutative, regardless of which operand is sparser
+    assert!(b.hadamard(&a).unwrap() == product);
+}
+
+#[test]
+fn sparsemat_hadamard_disjoint_and_shape_mismatch() {
+    let a = SparseMatrix::from([[1.0, 0.0], [0.0, 0.0]]);
+    let b = SparseMatrix::from([[0.0, 2.0], [0.0, 0.0]]);
+    assert!(a.hadamard(&b).unwrap().num_nonzero() == 0);
+
+    let other = SparseMatrix::<f64>::empty_with_shape(2, 3);
+    assert!(
+        a.hadamard(&other).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 2),
+                right: (2, 3)
+            })
+    );
+}
+
+#[test]
+fn sparsemat_map_changes_type_and_drops_zeros() {
+    let a = SparseMatrix::from([[1.0, 0.0], [-2.0, 3.0]]);
+    let signs = a.map(|x| if x > 0.0 { 1i32 } else { 0 });
+    assert!(signs.to_dense() == vec![vec![1, 0], vec![0, 1]]);
+    assert!(signs.num_nonzero() == 2);
+
+    // f is only applied to stored entries, so zeros stay zero
+    let shifted = a.map(|x| x + 1.0);
+    assert!(shifted.to_dense() == vec![vec![2.0, 0.0], vec![-1.0, 4.0]]);
+}
+
+#[test]
+fn sparsemat_apply_in_place() {
+    let mut a = SparseMatrix::from([[1.0, 0.0], [-1.0, 3.0]]);
+    a.explicitly_compress();
+    a.apply(|x| x * x - 1.0);
+    // 1 -> 0 (dropped), -1 -> 0 (dropped), 3 -> 8
+    assert!(a.to_dense() == vec![vec![0.0, 0.0], vec![0.0, 8.0]]);
+    assert!(a.num_nonzero() == 1);
+    assert!(a.compressed().is_none());
+}

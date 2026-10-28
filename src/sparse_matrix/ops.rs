@@ -254,3 +254,59 @@ macro_rules! impl_scalar_on_left {
 }
 
 impl_scalar_on_left!(f32, f64, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
+
+impl<T: Scalar> SparseMatrix<T> {
+    /// Element-wise (Hadamard) product of two matrices, returned as a new matrix.
+    ///
+    /// Only positions stored in both operands can be non-zero, so this visits the entries of
+    /// the sparser operand. Returns `SparseError::ShapeMismatch` if the shapes differ.
+    pub fn hadamard(&self, other: &SparseMatrix<T>) -> Result<SparseMatrix<T>, SparseError> {
+        if self.shape != other.shape {
+            return Err(SparseError::ShapeMismatch {
+                left: self.shape,
+                right: other.shape,
+            });
+        }
+
+        let (smaller, larger) = if self.values.len() <= other.values.len() {
+            (self, other)
+        } else {
+            (other, self)
+        };
+        let values = smaller
+            .values
+            .iter()
+            .filter_map(|(&key, &a)| {
+                let product = a * *larger.values.get(&key)?;
+                (product != T::zero()).then_some((key, product))
+            })
+            .collect();
+        Ok(SparseMatrix::from_values(self.shape, values))
+    }
+
+    /// Applies `f` to every stored entry, returned as a new matrix of the same shape. The
+    /// result may have a different element type.
+    ///
+    /// `f` sees stored entries only, never the implicit zeros, so `map(|x| x + 1)` does not
+    /// turn the zeros into ones. Results that are exactly zero are not stored.
+    pub fn map<U: Scalar>(&self, f: impl Fn(T) -> U) -> SparseMatrix<U> {
+        let values = self
+            .values
+            .iter()
+            .filter_map(|(&key, &val)| {
+                let mapped = f(val);
+                (mapped != U::zero()).then_some((key, mapped))
+            })
+            .collect();
+        SparseMatrix::from_values(self.shape, values)
+    }
+
+    /// Applies `f` to every stored entry in place; see `map` for what `f` is applied to.
+    pub fn apply(&mut self, f: impl Fn(T) -> T) {
+        self.values.retain(|_, val| {
+            *val = f(*val);
+            *val != T::zero()
+        });
+        self.invalidate();
+    }
+}
