@@ -23,6 +23,22 @@ pub enum SparseError {
         /// The length of the offending row.
         found: usize,
     },
+    /// A row or column index lies outside the matrix.
+    OutOfRange {
+        /// The offending row or column index.
+        index: usize,
+        /// The number of rows or columns it was checked against.
+        len: usize,
+    },
+    /// A range is reversed or extends past the end of the matrix.
+    InvalidRange {
+        /// The start of the range.
+        start: usize,
+        /// The (exclusive) end of the range.
+        end: usize,
+        /// The number of rows or columns the range was checked against.
+        len: usize,
+    },
     /// The operands' shapes are incompatible for the operation.
     ShapeMismatch {
         /// The shape `(rows, cols)` of the left operand.
@@ -45,6 +61,12 @@ impl fmt::Display for SparseError {
                 found,
             } => {
                 write!(f, "row {row} has length {found}, expected {expected}")
+            }
+            SparseError::OutOfRange { index, len } => {
+                write!(f, "index {index} out of range for length {len}")
+            }
+            SparseError::InvalidRange { start, end, len } => {
+                write!(f, "range {start}..{end} invalid for length {len}")
             }
             SparseError::ShapeMismatch { left, right } => {
                 write!(f, "incompatible shapes {left:?} and {right:?}")

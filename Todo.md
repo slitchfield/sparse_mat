@@ -22,7 +22,7 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 
 ## Access and iteration
 - [x] **Stored-entry iterator:** an iterator over `(row, col, val)` triplets. Today `row_iter` only yields dense rows, which defeats the purpose for large matrices.
-- [ ] **Sparse rows and columns:** `row(i)`/`col(j)` slices, a column iterator, `diagonal()`, and submatrix extraction.
+- [x] **Sparse rows and columns:** `row(i)`/`col(j)` slices, a column iterator, `diagonal()`, and submatrix extraction.
 - [ ] **Indexing:** `Index<(u64, u64)>` (`peek_at` returns an `Option` instead).
 
 ## Standard traits

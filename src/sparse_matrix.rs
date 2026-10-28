@@ -7,7 +7,7 @@ use crate::Scalar;
 mod access;
 mod ops;
 
-pub use access::Entries;
+pub use access::{ColIterator, Entries, SparseVector};
 
 /// A sparse matrix of `T` values (`f64` by default; any [`Scalar`](crate::Scalar) type works).
 ///
@@ -148,6 +148,14 @@ impl<T: Scalar> SparseMatrix<T> {
     fn invalidate(&mut self) {
         self.csr = None;
         self.csc = None;
+    }
+
+    /// The CSC form: borrowed from the cache when fresh, otherwise built on the spot.
+    pub(crate) fn csc_cow(&self) -> Cow<'_, Compressed<T>> {
+        match &self.csc {
+            Some(csc) => Cow::Borrowed(csc),
+            None => Cow::Owned(self.build_compressed(true)),
+        }
     }
 
     /// The CSR form: borrowed from the cache when fresh, otherwise built on the spot.

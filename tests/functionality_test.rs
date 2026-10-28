@@ -760,3 +760,121 @@ fn sparsemat_iter_sparse_cost_on_huge_shape() {
     let entries: Vec<_> = local.iter().collect();
     assert!(entries == vec![(5, 7, 1.0), (1 << 19, 3, 2.0)]);
 }
+
+fn sample_4x6() -> SparseMatrix {
+    SparseMatrix::from_triplets(
+        4,
+        6,
+        vec![
+            (0, 0, 10.0),
+            (0, 1, 20.0),
+            (1, 1, 30.0),
+            (2, 2, 50.0),
+            (1, 3, 40.0),
+            (2, 3, 60.0),
+            (2, 4, 70.0),
+            (3, 5, 80.0),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn sparsemat_row_extraction() {
+    let local = sample_4x6();
+    let row = local.row(2).unwrap();
+    assert!(row.len() == 6);
+    assert!(row.nnz() == 3);
+    assert!(row.indices() == [2, 3, 4]);
+    assert!(row.values() == [50.0, 60.0, 70.0]);
+    assert!(row.get(3) == Some(60.0));
+    assert!(row.get(0).is_none());
+    assert!(row.to_dense() == vec![0.0, 0.0, 50.0, 60.0, 70.0, 0.0]);
+    // An empty row
+    let empty = SparseMatrix::<f64>::empty_with_shape(2, 3).row(1).unwrap();
+    assert!(empty.nnz() == 0 && empty.len() == 3);
+}
+
+#[test]
+fn sparsemat_col_extraction() {
+    let mut local = sample_4x6();
+    let col = local.col(3).unwrap();
+    assert!(col.len() == 4);
+    assert!(col.indices() == [1, 2]);
+    assert!(col.values() == [40.0, 60.0]);
+
+    // Same answer from a fresh CSC cache
+    local.explicitly_compress_csc();
+    assert!(local.col(3).unwrap() == col);
+}
+
+#[test]
+fn sparsemat_row_col_out_of_range() {
+    let local = sample_4x6();
+    assert!(local.row(4).err() == Some(SparseError::OutOfRange { index: 4, len: 4 }));
+    assert!(local.col(6).err() == Some(SparseError::OutOfRange { index: 6, len: 6 }));
+}
+
+#[test]
+fn sparsemat_col_iter() {
+    let local = sample_4x6();
+    let cols: Vec<Vec<f64>> = local.col_iter().collect();
+    assert!(cols.len() == 6);
+    assert!(cols[1] == vec![20.0, 30.0, 0.0, 0.0]);
+    assert!(cols[5] == vec![0.0, 0.0, 0.0, 80.0]);
+    // Columns of a matrix are the rows of its transpose
+    let transposed_rows: Vec<Vec<f64>> = local.create_transpose().row_iter().collect();
+    assert!(cols == transposed_rows);
+}
+
+#[test]
+fn sparsemat_diagonal() {
+    let local = sample_4x6();
+    let diag = local.diagonal();
+    assert!(diag.len() == 4);
+    assert!(diag.indices() == [0, 1, 2]);
+    assert!(diag.values() == [10.0, 30.0, 50.0]);
+    assert!(diag.to_dense() == vec![10.0, 30.0, 50.0, 0.0]);
+
+    let identity = SparseMatrix::<f64>::identity(3);
+    assert!(identity.diagonal().to_dense() == vec![1.0, 1.0, 1.0]);
+    // Tall matrix: diagonal length is the smaller dimension
+    assert!(SparseMatrix::<f64>::empty_with_shape(5, 2).diagonal().len() == 2);
+}
+
+#[test]
+fn sparsemat_submatrix() {
+    let local = sample_4x6();
+    let block = local.submatrix(1..3, 1..4).unwrap();
+    assert!(block.shape == (2, 3));
+    assert!(block.to_dense() == vec![vec![30.0, 0.0, 40.0], vec![0.0, 50.0, 60.0]]);
+
+    let whole = local.submatrix(0..4, 0..6).unwrap();
+    assert!(whole.to_dense() == local.to_dense());
+
+    let empty = local.submatrix(2..2, 0..6).unwrap();
+    assert!(empty.shape == (0, 6));
+}
+
+#[test]
+fn sparsemat_submatrix_invalid_range() {
+    let local = sample_4x6();
+    assert!(
+        local.submatrix(0..5, 0..6).err()
+            == Some(SparseError::InvalidRange {
+                start: 0,
+                end: 5,
+                len: 4
+            })
+    );
+    #[allow(clippy::reversed_empty_ranges)]
+    let reversed = local.submatrix(0..4, 4..2);
+    assert!(
+        reversed.err()
+            == Some(SparseError::InvalidRange {
+                start: 4,
+                end: 2,
+                len: 6
+            })
+    );
+}
