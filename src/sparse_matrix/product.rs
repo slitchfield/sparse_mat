@@ -6,11 +6,28 @@
 use std::collections::HashMap;
 use std::ops::Mul;
 
-use super::SparseMatrix;
+use super::{Compressed, SparseMatrix};
 use crate::sparse_error::SparseError;
 use crate::Scalar;
 
 impl<T: Scalar> SparseMatrix<T> {
+    /// `A x` for a matrix in CSR form; the caller has checked that `x` has one entry per
+    /// column. Split out so that iterative solvers can build the CSR form once.
+    pub(super) fn mul_vec_csr(csr: &Compressed<T>, x: &[T]) -> Vec<T> {
+        csr.ptr
+            .windows(2)
+            .map(|bounds| {
+                let (cols, vals) = (
+                    &csr.idx[bounds[0]..bounds[1]],
+                    &csr.data[bounds[0]..bounds[1]],
+                );
+                cols.iter()
+                    .zip(vals)
+                    .fold(T::zero(), |sum, (&col, &val)| sum + val * x[col])
+            })
+            .collect()
+    }
+
     /// Computes the matrix-vector product `A x` for a column vector `x`, giving a vector of
     /// length `shape.0`.
     ///
@@ -24,20 +41,7 @@ impl<T: Scalar> SparseMatrix<T> {
             });
         }
 
-        let csr = self.csr_cow();
-        Ok(csr
-            .ptr
-            .windows(2)
-            .map(|bounds| {
-                let (cols, vals) = (
-                    &csr.idx[bounds[0]..bounds[1]],
-                    &csr.data[bounds[0]..bounds[1]],
-                );
-                cols.iter()
-                    .zip(vals)
-                    .fold(T::zero(), |sum, (&col, &val)| sum + val * x[col])
-            })
-            .collect())
+        Ok(Self::mul_vec_csr(&self.csr_cow(), x))
     }
 
     /// Computes the vector-matrix product `x A` for a row vector `x`, giving a vector of

@@ -38,7 +38,7 @@ Missing functionality, compared with mature sparse libraries (SciPy `sparse`, Ei
 ## Further out
 - [x] **Generic scalar type:** `f32`, integers and complex numbers, via `num-traits`.
 - [x] **Block operations:** `kron`, `hstack` and `vstack`.
-- [ ] **Solvers:** triangular solves, then LU/Cholesky and iterative methods like CG.
+- [x] **Solvers:** triangular solves, then LU/Cholesky and iterative methods like CG.
 - [ ] **File I/O:** Matrix Market (`.mtx`) read and write.
 - [ ] **Optional features:** `serde` and `rayon`.
 

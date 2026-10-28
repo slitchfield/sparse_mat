@@ -49,6 +49,23 @@ pub enum SparseError {
         /// The shape `(rows, cols)` of the matrix.
         shape: (usize, usize),
     },
+    /// A zero (or missing) pivot made the matrix singular to working precision.
+    SingularMatrix {
+        /// The row/column index of the zero pivot.
+        pivot: usize,
+    },
+    /// The matrix is not symmetric, but the operation requires it.
+    NotSymmetric,
+    /// A non-positive pivot showed the matrix is not positive definite.
+    NotPositiveDefinite {
+        /// The row/column index of the offending pivot.
+        pivot: usize,
+    },
+    /// An iterative method did not reach the requested tolerance.
+    NoConvergence {
+        /// How many iterations were run.
+        iterations: usize,
+    },
     /// The result's dimensions do not fit in a `usize`.
     ShapeOverflow,
     /// The operands' shapes are incompatible for the operation.
@@ -85,6 +102,16 @@ impl fmt::Display for SparseError {
             }
             SparseError::NotSquare { shape } => {
                 write!(f, "matrix of shape {shape:?} is not square")
+            }
+            SparseError::SingularMatrix { pivot } => {
+                write!(f, "matrix is singular (zero pivot at {pivot})")
+            }
+            SparseError::NotSymmetric => write!(f, "matrix is not symmetric"),
+            SparseError::NotPositiveDefinite { pivot } => {
+                write!(f, "matrix is not positive definite (pivot {pivot})")
+            }
+            SparseError::NoConvergence { iterations } => {
+                write!(f, "no convergence after {iterations} iterations")
             }
             SparseError::ShapeOverflow => {
                 write!(f, "result dimensions overflow usize")

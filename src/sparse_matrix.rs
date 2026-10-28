@@ -9,7 +9,10 @@ mod blocks;
 mod ops;
 mod product;
 mod properties;
+mod solvers;
 mod traits;
+
+pub use solvers::Lu;
 
 pub use access::{ColIterator, Entries, SparseVector};
 
