@@ -2345,3 +2345,101 @@ fn sparsemat_permute_errors() {
     let empty = SparseMatrix::<f64>::new();
     assert!(empty.permute_symmetric(&[]).unwrap().shape == (0, 0));
 }
+
+fn pseudo_random_complex(
+    rows: usize,
+    cols: usize,
+    seed: u64,
+) -> SparseMatrix<num_complex::Complex<f64>> {
+    let re = pseudo_random(rows, cols, seed, 40);
+    let im = pseudo_random(rows, cols, seed + 1000, 40);
+    SparseMatrix::from_parts(&re, &im).unwrap()
+}
+
+#[test]
+fn sparsemat_from_parts_round_trips_real_and_imag() {
+    let a = pseudo_random_complex(6, 5, 91);
+    let (re, im) = (a.real(), a.imag());
+    assert!(re.shape == (6, 5) && im.shape == (6, 5));
+    assert!(SparseMatrix::from_parts(&re, &im).unwrap() == a);
+}
+
+#[test]
+fn sparsemat_real_and_imag_drop_zero_parts() {
+    use num_complex::Complex;
+    let a = SparseMatrix::from([
+        [Complex::new(1.0, 0.0), Complex::new(0.0, 2.0)],
+        [Complex::new(3.0, -4.0), Complex::new(0.0, 0.0)],
+    ]);
+    let re = a.real();
+    let im = a.imag();
+    assert!(re.to_dense() == vec![vec![1.0, 0.0], vec![3.0, 0.0]]);
+    assert!(im.to_dense() == vec![vec![0.0, 2.0], vec![-4.0, 0.0]]);
+    // The purely imaginary entry is absent from the real part, and vice versa
+    assert!(re.num_nonzero() == 2 && im.num_nonzero() == 2);
+}
+
+#[test]
+fn sparsemat_conj_and_adjoint() {
+    use num_complex::Complex;
+    let a = SparseMatrix::from([
+        [Complex::new(1.0, 2.0), Complex::new(0.0, -1.0)],
+        [Complex::new(0.0, 0.0), Complex::new(3.0, 0.0)],
+    ]);
+    let conjugated = a.conj();
+    assert!(conjugated[(0, 0)] == Complex::new(1.0, -2.0));
+    assert!(conjugated[(0, 1)] == Complex::new(0.0, 1.0));
+    assert!(conjugated.conj() == a);
+
+    let adjoint = a.adjoint();
+    assert!(adjoint == a.conj().create_transpose());
+    assert!(adjoint[(1, 0)] == Complex::new(0.0, 1.0));
+    assert!(adjoint.adjoint() == a);
+}
+
+#[test]
+fn sparsemat_adjoint_reverses_products() {
+    // (AB)ᴴ = Bᴴ Aᴴ, on a rectangular pair
+    let a = pseudo_random_complex(4, 3, 92);
+    let b = pseudo_random_complex(3, 5, 93);
+    assert!((&a * &b).adjoint() == &b.adjoint() * &a.adjoint());
+}
+
+#[test]
+fn sparsemat_hermitian_matrix_is_its_own_adjoint() {
+    let a = pseudo_random_complex(5, 5, 94);
+    let hermitian = &a + &a.adjoint();
+    assert!(hermitian.adjoint() == hermitian);
+    // Its diagonal is real
+    assert!(hermitian
+        .diagonal()
+        .values()
+        .iter()
+        .all(|val| val.im == 0.0));
+}
+
+#[test]
+fn sparsemat_complex_helpers_on_real_matrices() {
+    let a = pseudo_random(4, 6, 95, 50);
+    assert!(a.conj() == a);
+    assert!(a.adjoint() == a.create_transpose());
+    assert!(a.real() == a);
+    let imaginary = a.imag();
+    assert!(imaginary.shape == (4, 6) && imaginary.num_nonzero() == 0);
+
+    let single = SparseMatrix::from([[1.0f32, 0.0], [0.0, -2.0]]);
+    assert!(single.adjoint() == single.create_transpose());
+}
+
+#[test]
+fn sparsemat_from_parts_shape_mismatch() {
+    let re = SparseMatrix::<f64>::empty_with_shape(2, 3);
+    let im = SparseMatrix::<f64>::empty_with_shape(3, 2);
+    assert!(
+        SparseMatrix::from_parts(&re, &im).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 3),
+                right: (3, 2)
+            })
+    );
+}

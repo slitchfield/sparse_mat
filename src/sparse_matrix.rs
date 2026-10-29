@@ -6,6 +6,7 @@ use crate::Scalar;
 
 mod access;
 mod blocks;
+mod complex;
 mod matrix_market;
 mod ops;
 #[cfg(feature = "rayon")]

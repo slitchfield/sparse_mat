@@ -78,6 +78,12 @@ fn main() -> Result<(), SparseError> {
 - `scale_rows(&v)` and `scale_cols(&v)` compute diag(v)·A and A·diag(v) without forming the
   diagonal matrix.
 
+**Complex matrices**
+- `conj()`, `adjoint()` (conjugate transpose), and `real()`/`imag()` for the parts. These are
+  generic over `ComplexFloat`, so on `f32`/`f64` matrices `conj` is a copy, `adjoint` the
+  transpose and `imag` empty.
+- `SparseMatrix::from_parts(&re, &im)` builds a complex matrix and inverts `real`/`imag`.
+
 **Products**
 - Matrix × vector (`mul_vec`, `&a * &x`) and vector × matrix (`vec_mul`, `&x * &a`).
 - Matrix × dense matrix (`mul_dense`) and sparse × sparse (`matmul`, `&a * &b`, using Gustavson's

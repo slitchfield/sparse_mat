@@ -49,7 +49,7 @@ Merged in PR #2.
       `submatrix`.
 - [x] `permute(row_perm, col_perm)` and `permute_symmetric(perm)`, validating that each is a
       permutation. Test that a permutation followed by its inverse is the identity.
-- [ ] Complex helpers: `conj()` (identity for real types via `ComplexFloat`), `adjoint()`,
+- [x] Complex helpers: `conj()` (identity for real types via `ComplexFloat`), `adjoint()`,
       `real()`, `imag()`, and `from_parts(re, im)`. Test that `from_parts(a.real(), a.imag())`
       gives back `a`.
 
