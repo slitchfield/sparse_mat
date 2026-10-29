@@ -21,6 +21,9 @@ confidence-threshold = 0.9
 # Duplicate versions only warn: they cost build time, but aren't a correctness or license issue
 multiple-versions = "warn"
 wildcards = "deny"
+# Except path dependencies between workspace crates in unpublished (publish = false) crates,
+#   such as powerflow's on sparse_mat. A published crate still needs a version on them.
+allow-wildcard-paths = true
 
 [sources]
 # Only crates.io; no git or alternative-registry dependencies
