@@ -152,7 +152,9 @@ Merged in PR #2.
 - [ ] **Decide:** integer overflow when summing duplicate entries (`from_triplets`, and so the
       Matrix Market reader) panics in debug builds. Keep integer `+` semantics (documented), or
       add a checked-add bound so it can return an error.
-- [ ] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
+- [x] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
+      `cargo deny` (advisories, licenses, bans, sources) is configured in `deny.toml` and runs
+      in a CI job.
 - [x] License: dual MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`, and `license` in
       `Cargo.toml`).
 - [x] Add the remaining package metadata (`description`, `repository`) and check
