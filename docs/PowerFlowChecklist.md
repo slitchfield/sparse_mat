@@ -160,5 +160,7 @@ Merged in PR #2.
 - [x] Add the remaining package metadata (`description`, `repository`) and check
       `cargo package --list`, which currently warns that they are missing.
 - [x] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
-- [ ] Decide whether to doctest the README by including it as crate docs
-      (`#![doc = include_str!("../README.md")]`), so its example can't drift.
+- [x] Decide whether to doctest the README by including it as crate docs
+      (`#![doc = include_str!("../README.md")]`), so its example can't drift. Decided: doctest
+      it through a `#[cfg(doctest)]` item in `lib.rs` instead, which keeps the crate docs
+      separate from the README.
