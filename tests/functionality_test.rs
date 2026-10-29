@@ -2102,3 +2102,50 @@ fn sparsemat_matrix_market_io_error_is_reported() {
     let result = SparseMatrix::<f64>::identity(2).write_matrix_market(FailingWriter);
     assert!(matches!(result, Err(SparseError::Io { message }) if message.contains("no space")));
 }
+
+#[test]
+fn sparsemat_from_csr_rows_overflow_is_an_error() {
+    // rows + 1 does not fit in a usize, so no row_ptr can have the right length
+    let result = SparseMatrix::<f64>::from_csr(usize::MAX, 1, vec![0], vec![], vec![]);
+    assert!(
+        result.err()
+            == Some(SparseError::InvalidCsr {
+                reason: "row_ptr must have rows + 1 entries"
+            })
+    );
+}
+
+#[test]
+#[should_panic(expected = "compressed storage")]
+fn sparsemat_csr_for_usize_max_rows_panics_clearly() {
+    // CSR needs rows + 1 pointers, which overflows
+    let local = SparseMatrix::<f64>::empty_with_shape(usize::MAX, 1);
+    let _ = local.iter().count();
+}
+
+#[test]
+#[should_panic(expected = "compressed storage")]
+fn sparsemat_csc_for_usize_max_cols_panics_clearly() {
+    let local = SparseMatrix::<f64>::empty_with_shape(1, usize::MAX);
+    let _ = local.col(0);
+}
+
+#[test]
+#[should_panic(expected = "compressed storage")]
+fn sparsemat_csr_too_large_to_allocate_panics_clearly() {
+    // No overflow in rows + 1, but 2^61 pointers is more bytes than an allocation can hold
+    let local = SparseMatrix::<f64>::empty_with_shape(1 << 61, 1);
+    let _ = local.iter().count();
+}
+
+#[test]
+fn sparsemat_matrix_market_huge_entry_count_is_not_preallocated() {
+    // A header can claim any entry count; it must not be trusted as an allocation size
+    let text = format!(
+        "%%MatrixMarket matrix coordinate real general\n2 2 {}\n1 1 1\n",
+        usize::MAX
+    );
+    let (line, message) = parse_failure(&text);
+    assert!(line == 3);
+    assert!(message == format!("expected {} entries, found 1", usize::MAX));
+}

@@ -2,6 +2,12 @@
 name = "sparse_mat"
 version = "0.1.0"
 edition = "2021"
+# Oldest supported Rust, checked by the MSRV job in .github/workflows/rust.yml. Raised by
+#   `<uN>::is_multiple_of` (1.87).
+rust-version = "1.87"
+# MSRV-aware dependency resolution: when generating a lockfile, prefer dependency versions
+#   that support rust-version. Cargo.lock is not committed, so CI resolves on every run.
+resolver = "3"
 
 [features]
 # Serialize and deserialize matrices as a shape plus a list of (row, col, value) entries

@@ -32,6 +32,11 @@ pub use access::{ColIterator, Entries, SparseVector};
 /// and `compressed_csc`. Any mutation drops both copies. Operations that need compressed
 /// storage (row and column access, products) read a fresh cached copy when there is one and
 /// otherwise build a temporary one, so they are always correct but cheaper after compressing.
+///
+/// A compressed copy needs one pointer per row (CSR) or column (CSC) plus one, however few
+/// entries are stored. Shapes too large for that (for example a dimension of `usize::MAX`)
+/// still work for element access and construction, but operations that need the compressed
+/// form panic with a message saying so.
 #[derive(Clone)]
 pub struct SparseMatrix<T = f64> {
     /// The matrix dimensions as `(rows, cols)`.
@@ -131,7 +136,7 @@ impl<T: Scalar> SparseMatrix<T> {
         let major_of = |&(row, col): &(usize, usize)| if by_col { col } else { row };
 
         // Count entries per major index, then prefix-sum into segment pointers
-        let mut ptr = vec![0; major_dim + 1];
+        let mut ptr = Self::zeroed_pointers(major_dim);
         for key in self.values.keys() {
             ptr[major_of(key) + 1] += 1;
         }
@@ -141,21 +146,45 @@ impl<T: Scalar> SparseMatrix<T> {
             *p = running;
         }
 
-        // Scatter each entry into its segment, then sort segments by minor index
-        let mut next = ptr.clone();
+        // Scatter each entry into its segment, using ptr[major] as the segment's write
+        //   cursor. Afterwards each ptr[major] has advanced to the next segment's start, so
+        //   shifting the array right by one restores the pointers without a second copy.
         let mut entries = vec![(0, T::zero()); self.values.len()];
         for (key, val) in self.values.iter() {
             let major = major_of(key);
             let minor = if by_col { key.0 } else { key.1 };
-            entries[next[major]] = (minor, *val);
-            next[major] += 1;
+            entries[ptr[major]] = (minor, *val);
+            ptr[major] += 1;
         }
+        ptr.copy_within(..major_dim, 1);
+        ptr[0] = 0;
+
         for segment in ptr.windows(2) {
             entries[segment[0]..segment[1]].sort_unstable_by_key(|entry| entry.0);
         }
 
         let (idx, data) = entries.into_iter().unzip();
         Compressed { ptr, idx, data }
+    }
+
+    /// Allocates the `dim + 1` zeroed segment pointers of a compressed form.
+    ///
+    /// Compressed storage costs O(dim) memory however sparse the matrix is, so a dimension
+    /// near `usize::MAX` cannot have one. Panics with a message naming the dimension, instead
+    /// of overflowing `dim + 1` (which wraps silently in release builds) or failing inside the
+    /// allocator.
+    fn zeroed_pointers(dim: usize) -> Vec<usize> {
+        let len = dim.checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "compressed storage for dimension {dim} needs dim + 1 pointers, overflowing usize"
+            )
+        });
+        let mut ptr = Vec::new();
+        ptr.try_reserve_exact(len).unwrap_or_else(|err| {
+            panic!("compressed storage for dimension {dim} needs {len} pointers: {err}")
+        });
+        ptr.resize(len, 0);
+        ptr
     }
 
     /// Drops the cached compressed copies; call after any change to `values` or `shape`.
@@ -349,7 +378,8 @@ impl<T: Scalar> SparseMatrix<T> {
         data: Vec<T>,
     ) -> Result<SparseMatrix<T>, SparseError> {
         let invalid = |reason| Err(SparseError::InvalidCsr { reason });
-        if row_ptr.len() != rows + 1 {
+        // Checked: rows + 1 overflows for rows == usize::MAX, and no row_ptr can be that long
+        if rows.checked_add(1) != Some(row_ptr.len()) {
             return invalid("row_ptr must have rows + 1 entries");
         }
         if col_idx.len() != data.len() {

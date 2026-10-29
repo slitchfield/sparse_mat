@@ -12,6 +12,10 @@ use super::SparseMatrix;
 use crate::sparse_error::SparseError;
 use crate::Scalar;
 
+/// The most entries reserved up front from a file's size line. The size line is untrusted
+/// input, so beyond this the entry list grows as entries are actually read.
+const MAX_PREALLOCATED_ENTRIES: usize = 1 << 20;
+
 #[derive(Clone, Copy, PartialEq)]
 enum Symmetry {
     General,
@@ -76,7 +80,8 @@ impl<T: Scalar> SparseMatrix<T> {
         }
         let expected = expected.ok_or_else(|| parse_error(header_line, "missing size line"))?;
 
-        let mut triplets: Vec<(usize, usize, T)> = Vec::with_capacity(expected);
+        let mut triplets: Vec<(usize, usize, T)> =
+            Vec::with_capacity(expected.min(MAX_PREALLOCATED_ENTRIES));
         let mut found = 0;
         let mut last_line = header_line;
         for (number, line) in lines {
