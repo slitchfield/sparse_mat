@@ -153,6 +153,6 @@ Merged in PR #2.
       `Cargo.toml`).
 - [ ] Add the remaining package metadata (`description`, `repository`) and check
       `cargo package --list`, which currently warns that they are missing.
-- [ ] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
+- [x] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
 - [ ] Decide whether to doctest the README by including it as crate docs
       (`#![doc = include_str!("../README.md")]`), so its example can't drift.
