@@ -151,7 +151,7 @@ Merged in PR #2.
 - [ ] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
 - [x] License: dual MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`, and `license` in
       `Cargo.toml`).
-- [ ] Add the remaining package metadata (`description`, `repository`) and check
+- [x] Add the remaining package metadata (`description`, `repository`) and check
       `cargo package --list`, which currently warns that they are missing.
 - [x] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
 - [ ] Decide whether to doctest the README by including it as crate docs
