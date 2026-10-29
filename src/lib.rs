@@ -12,5 +12,11 @@ pub fn add(left: u64, right: u64) -> u64 {
 /// The `SparseMatrix` type and its iterators.
 pub mod sparse_matrix;
 
+/// Element types a `SparseMatrix` can hold: any `Copy` numeric type (`f32`, `f64`, integers,
+/// `num_complex::Complex`, ...) with the arithmetic operations and zero/one of `num_traits::Num`.
+pub trait Scalar: Copy + PartialEq + num_traits::Num {}
+
+impl<T: Copy + PartialEq + num_traits::Num> Scalar for T {}
+
 /// The error type returned by `SparseMatrix` operations.
 pub mod sparse_error;
