@@ -2,7 +2,7 @@
 
 A sparse matrix library for Rust: construction, arithmetic, products, factorizations and
 iterative solvers, Matrix Market I/O, and optional `serde` and `rayon` support. It is generic
-over the element type (`f64` by default) and has one required dependency, `num-traits`.
+over the element type (`f64` by default) and has two required dependencies, `num-traits` and `num-complex`.
 
 It is being developed as the numerical foundation for a DC and AC power flow library; see
 [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md) for that roadmap.
@@ -103,10 +103,10 @@ fn main() -> Result<(), SparseError> {
 ## Element types
 
 `SparseMatrix<T>` accepts any `Scalar`, meaning any `Copy + PartialEq + num_traits::Num`
-type. That covers `f32`, `f64`, every integer type and `num_complex::Complex`. Arithmetic,
-products and conversions work for all of them. Norms and solvers need `num_traits::Float`, so
-today they cover `f32` and `f64` but not complex numbers. Complex-capable solvers are on the
-roadmap.
+type. That covers `f32`, `f64`, every integer type and `num_complex::Complex` (re-exported as
+`sparse_mat::Complex`). Arithmetic, products and conversions work for all of them. Norms and
+solvers need `num_traits::Float`, so today they cover `f32` and `f64` but not complex numbers.
+Complex-capable solvers are on the roadmap.
 
 Rust does not apply a type parameter's default in expressions, so a call with nothing to infer
 `T` from needs it spelled out: `SparseMatrix::<f64>::new()`.

@@ -38,8 +38,9 @@ Merged in PR #2.
 
 ## Phase 1: Cheap primitives
 
-- [ ] **Decide:** whether `num-complex` is always a dependency or behind a `complex` feature.
-      Recommended: always on, since it's small and both Phase 1 and Phase 4 need it.
+- [x] **Decide:** whether `num-complex` is always a dependency or behind a `complex` feature.
+      Decided: always a dependency, re-exported as `sparse_mat::num_complex` and
+      `sparse_mat::Complex`.
 - [ ] `scale_rows(&[T])` and `scale_cols(&[T])` (diag(v)·A and A·diag(v)), with
       `ShapeMismatch` on a wrong length. Test against `from_diagonal(v) * A`.
 - [ ] `select(rows: &[usize], cols: &[usize])` for non-contiguous index sets. Rows and columns
