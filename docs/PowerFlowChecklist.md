@@ -146,8 +146,12 @@ Merged in PR #2.
 
 ## Housekeeping (carried over from the PR #1 review)
 
-- [ ] Fuzz the Matrix Market parser with truncated, malformed and oversized input, and confirm
-      it always errors instead of panicking.
+- [x] Fuzz the Matrix Market parser with truncated, malformed and oversized input, and confirm
+      it always errors instead of panicking. Done as deterministic tests
+      (`tests/matrix_market_fuzz_test.rs`); fixed a skew-symmetric negation overflow.
+- [ ] **Decide:** integer overflow when summing duplicate entries (`from_triplets`, and so the
+      Matrix Market reader) panics in debug builds. Keep integer `+` semantics (documented), or
+      add a checked-add bound so it can return an error.
 - [ ] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
 - [x] License: dual MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`, and `license` in
       `Cargo.toml`).
