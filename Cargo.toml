@@ -1,36 +1,14 @@
-[package]
-name = "sparse_mat"
-version = "0.1.0"
-edition = "2021"
-description = "Sparse matrices for Rust: assembly, products, LU/Cholesky/CG solvers and Matrix Market I/O"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/slitchfield/sparse_mat"
-readme = "README.md"
-keywords = ["sparse", "matrix", "linear-algebra", "csr", "solver"]
-categories = ["mathematics", "science"]
-# CI scripts are not needed to build or use the crate. The docs, including the AI reports,
-#   stay in the package alongside AI-DISCLAIMER.md.
-exclude = [".github/", "check.sh"]
-# Oldest supported Rust, checked by the MSRV job in .github/workflows/rust.yml. Raised by
-#   `<uN>::is_multiple_of` (1.87).
-rust-version = "1.87"
+[workspace]
+members = ["sparse_mat"]
 # MSRV-aware dependency resolution: when generating a lockfile, prefer dependency versions
 #   that support rust-version. Cargo.lock is not committed, so CI resolves on every run.
 resolver = "3"
 
-[features]
-# Serialize and deserialize matrices as a shape plus a list of (row, col, value) entries
-serde = ["dep:serde"]
-# Parallel versions of the heavier products, prefixed `par_`
-rayon = ["dep:rayon"]
-
-[dependencies]
-num-traits = "0.2"
-# Complex element types, and the ComplexFloat trait that lets one code path serve real and
-#   complex matrices (conj, real/imag parts, and later the solvers)
-num-complex = "0.4"
-serde = { version = "1", optional = true, features = ["derive"] }
-rayon = { version = "1", optional = true }
-
-[dev-dependencies]
-serde_json = "1"
+# Shared by every crate in the workspace, which opt in with `<field>.workspace = true`
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/slitchfield/ybus"
+# Oldest supported Rust, checked by the MSRV job in .github/workflows/rust.yml. Raised by
+#   `<uN>::is_multiple_of` (1.87).
+rust-version = "1.87"

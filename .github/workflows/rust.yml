@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Keep in sync with rust-version in Cargo.toml
+      # Keep in sync with rust-version in the root Cargo.toml
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.87"
