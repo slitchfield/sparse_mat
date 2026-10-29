@@ -176,6 +176,8 @@ checked method alongside it (`try_add`, `matmul`, `mul_vec`, `peek_at`, …).
 - [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md) is the roadmap toward DC/AC power
   flow.
 - [`docs/ai-reports/`](docs/ai-reports/) holds implementation reports for past branches.
+- [`AI-DISCLAIMER.md`](AI-DISCLAIMER.md) describes how AI was used to build this repository and
+  how to report missing attribution.
 - API documentation: `cargo doc --open --all-features`.
 
 ## License
@@ -186,7 +188,8 @@ Licensed under either of
   <https://www.apache.org/licenses/LICENSE-2.0>)
 - MIT license ([`LICENSE-MIT`](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
 
-at your option.
+at your option. See [`AI-DISCLAIMER.md`](AI-DISCLAIMER.md) for how this licensing relates to the
+use of AI in developing the crate.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
 this work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without
