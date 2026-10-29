@@ -55,9 +55,11 @@ Merged in PR #2.
 
 ## Phase 1.5: DC power flow prototype (power flow crate)
 
-- [ ] **Decide:** a Cargo workspace in this repo (`sparse_mat/` and `powerflow/`) or a separate
+- [x] **Decide:** a Cargo workspace in this repo (`sparse_mat/` and `powerflow/`) or a separate
       repo. Recommended: a workspace, so one CI run covers both. Converting means moving the
       crate into a subdirectory; `check.sh` already uses `--workspace`.
+      Decided: a workspace. The repository is renamed `ybus`; the crates are `sparse_mat/` and
+      `powerflow/`.
 - [ ] **Decide:** confirm the MATPOWER license terms before vendoring its case files as test data.
 - [ ] Case model: buses (type, demand, shunts, voltage limits), branches (r, x, b, tap, shift,
       status) and generators, in per unit.
