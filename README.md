@@ -177,3 +177,50 @@ checked method alongside it (`try_add`, `matmul`, `mul_vec`, `peek_at`, …).
   flow.
 - [`docs/ai-reports/`](docs/ai-reports/) holds implementation reports for past branches.
 - API documentation: `cargo doc --open --all-features`.
+
+## References
+
+The algorithms in this crate were written from the standard published descriptions below. No
+source code from other libraries was copied or ported.
+
+### Implemented
+
+| Where | Algorithm | Reference |
+|---|---|---|
+| `solve_lower_triangular`, `solve_upper_triangular`, `lu`, `Lu::determinant` | Forward and back substitution; Gaussian elimination with partial pivoting | G. H. Golub and C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins University Press, 2013, ch. 3. |
+| `cholesky` | Up-looking (row-by-row) sparse Cholesky. This crate's version does no elimination-tree symbolic analysis. | T. A. Davis, *Direct Methods for Sparse Linear Systems*, SIAM, 2006, ch. 4. |
+| `conjugate_gradient` | Conjugate gradient | M. R. Hestenes and E. Stiefel, "Methods of conjugate gradients for solving linear systems," *J. Res. Natl. Bur. Stand.* 49(6):409–436, 1952. [doi:10.6028/jres.049.044](https://doi.org/10.6028/jres.049.044) |
+| | | Y. Saad, *Iterative Methods for Sparse Linear Systems*, 2nd ed., SIAM, 2003. |
+| | | J. R. Shewchuk, "An Introduction to the Conjugate Gradient Method Without the Agonizing Pain," Tech. Rep. CMU-CS-94-125, Carnegie Mellon University, 1994. |
+| `matmul`, `par_matmul`, CSR/CSC construction | Row-by-row sparse matrix product; counting-sort transposition into compressed form | F. G. Gustavson, "Two fast algorithms for sparse matrices: multiplication and permuted transposition," *ACM Trans. Math. Softw.* 4(3):250–269, 1978. [doi:10.1145/355791.355796](https://doi.org/10.1145/355791.355796) |
+| Matrix Market I/O | Coordinate exchange format | R. F. Boisvert, R. Pozo and K. A. Remington, "The Matrix Market Exchange Formats: Initial Design," NISTIR 5935, NIST, 1996. [doi:10.6028/NIST.IR.5935](https://doi.org/10.6028/NIST.IR.5935) |
+
+### Planned (see [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md))
+
+| Planned work | Reference |
+|---|---|
+| Left-looking sparse LU (Phase 3) | J. R. Gilbert and T. Peierls, "Sparse partial pivoting in time proportional to arithmetic operations," *SIAM J. Sci. Stat. Comput.* 9(5):862–874, 1988. [doi:10.1137/0909058](https://doi.org/10.1137/0909058) |
+| Refactoring circuit-like matrices (Phase 3) | T. A. Davis and E. Palamadai Natarajan, "Algorithm 907: KLU, a direct sparse solver for circuit simulation problems," *ACM Trans. Math. Softw.* 37(3), article 36, 2010. [doi:10.1145/1824801.1824814](https://doi.org/10.1145/1824801.1824814) |
+| Reverse Cuthill–McKee ordering (Phase 3) | E. Cuthill and J. McKee, "Reducing the bandwidth of sparse symmetric matrices," *Proc. 24th ACM National Conference*, pp. 157–172, 1969. |
+| | A. George and J. W. H. Liu, *Computer Solution of Large Sparse Positive Definite Systems*, Prentice-Hall, 1981. |
+| AMD ordering (Phase 3) | P. R. Amestoy, T. A. Davis and I. S. Duff, "An approximate minimum degree ordering algorithm," *SIAM J. Matrix Anal. Appl.* 17(4):886–905, 1996. [doi:10.1137/S0895479894278952](https://doi.org/10.1137/S0895479894278952) |
+| COLAMD ordering (Phase 3) | T. A. Davis, J. R. Gilbert, S. I. Larimore and E. G. Ng, "A column approximate minimum degree ordering algorithm," *ACM Trans. Math. Softw.* 30(3):353–376, 2004. |
+| Low-rank updates for contingencies (Phase 5) | J. Sherman and W. J. Morrison, "Adjustment of an inverse matrix corresponding to a change in one element of a given matrix," *Ann. Math. Statist.* 21(1):124–127, 1950. [doi:10.1214/aoms/1177729893](https://doi.org/10.1214/aoms/1177729893) |
+| | M. A. Woodbury, "Inverting modified matrices," Memorandum Report 42, Statistical Research Group, Princeton University, 1950. |
+| Newton–Raphson power flow and its Jacobian; reference results (Phases 1.5 and 4.5) | R. D. Zimmerman, C. E. Murillo-Sánchez and R. J. Thomas, "MATPOWER: Steady-state operations, planning, and analysis tools for power systems research and education," *IEEE Trans. Power Syst.* 26(1):12–19, 2011. [doi:10.1109/TPWRS.2010.2051168](https://doi.org/10.1109/TPWRS.2010.2051168) |
+| Fast-decoupled power flow (Phase 4.5) | B. Stott and O. Alsaç, "Fast decoupled load flow," *IEEE Trans. Power App. Syst.* PAS-93(3):859–869, 1974. |
+
+### Licenses of related software
+
+Algorithms are not covered by copyright, so implementing them from the publications above
+carries no license obligations. Porting the source code of a reference implementation would.
+The current terms of the most relevant implementations:
+
+- **SuiteSparse AMD, CAMD, COLAMD and CCOLAMD:** BSD 3-clause. Porting is possible if their
+  copyright notices are kept.
+- **SuiteSparse CSparse, CXSparse, KLU and BTF:** LGPL 2.1 or later. Porting their code would
+  bring LGPL obligations, so implement from the papers instead.
+- **MATPOWER:** the code is BSD 3-clause. Its case files have their own provenance, so check
+  each file's header before vendoring them as test data.
+
+Before relying on these, check them against each project's current `LICENSE` file.
