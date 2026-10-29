@@ -12,6 +12,7 @@ mod ops;
 mod parallel;
 mod product;
 mod properties;
+mod reorder;
 #[cfg(feature = "serde")]
 mod serde_impl;
 mod solvers;

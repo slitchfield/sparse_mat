@@ -45,8 +45,9 @@ Merged in PR #2.
       `ShapeMismatch` on a wrong length. Test against `from_diagonal(v) * A`.
 - [x] `select(rows: &[usize], cols: &[usize])` for non-contiguous index sets. Rows and columns
       come out in the order given; `OutOfRange` on a bad index; repeated indices are allowed and
-      repeat the row or column (decided and documented). Test that `select` with ranges matches `submatrix`.
-- [ ] `permute(row_perm, col_perm)` and `permute_symmetric(perm)`, validating that each is a
+      repeat the row or column (decided and documented). Test that `select` with ranges matches
+      `submatrix`.
+- [x] `permute(row_perm, col_perm)` and `permute_symmetric(perm)`, validating that each is a
       permutation. Test that a permutation followed by its inverse is the identity.
 - [ ] Complex helpers: `conj()` (identity for real types via `ComplexFloat`), `adjoint()`,
       `real()`, `imag()`, and `from_parts(re, im)`. Test that `from_parts(a.real(), a.imag())`

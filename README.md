@@ -67,6 +67,8 @@ fn main() -> Result<(), SparseError> {
   columns.
 - `diagonal()`, `submatrix(rows, cols)` for contiguous ranges, and `select(&rows, &cols)` for
   arbitrary index lists in any order.
+- `permute(&row_perm, &col_perm)` and `permute_symmetric(&perm)` (P A Pᵀ), using the same
+  convention as `select`: row `i` of the result is row `perm[i]` of the input.
 
 **Arithmetic**
 - `+`, `-`, unary `-`, `+=`, `-=`, `*=` and scalar `*` (on either side for primitive types), for

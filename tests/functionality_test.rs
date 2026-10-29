@@ -2267,3 +2267,81 @@ fn sparsemat_select_empty_and_out_of_range() {
     assert!(a.select(&[0, 4], &[0]).err() == Some(SparseError::OutOfRange { index: 4, len: 4 }));
     assert!(a.select(&[0], &[9]).err() == Some(SparseError::OutOfRange { index: 9, len: 6 }));
 }
+
+fn inverse_of(perm: &[usize]) -> Vec<usize> {
+    let mut inverse = vec![0; perm.len()];
+    for (position, &index) in perm.iter().enumerate() {
+        inverse[index] = position;
+    }
+    inverse
+}
+
+#[test]
+fn sparsemat_permute_matches_select() {
+    let a = pseudo_random(5, 4, 81, 50);
+    let (rows, cols) = ([3, 0, 4, 1, 2], [2, 3, 0, 1]);
+    assert!(a.permute(&rows, &cols).unwrap() == a.select(&rows, &cols).unwrap());
+}
+
+#[test]
+fn sparsemat_permute_then_inverse_is_identity() {
+    let a = pseudo_random(6, 5, 82, 45);
+    let (rows, cols) = ([5, 2, 0, 4, 1, 3], [4, 0, 3, 1, 2]);
+    let permuted = a.permute(&rows, &cols).unwrap();
+    assert!(permuted != a);
+    let restored = permuted
+        .permute(&inverse_of(&rows), &inverse_of(&cols))
+        .unwrap();
+    assert!(restored == a);
+    // The identity permutation changes nothing
+    assert!(a.permute(&[0, 1, 2, 3, 4, 5], &[0, 1, 2, 3, 4]).unwrap() == a);
+}
+
+#[test]
+fn sparsemat_permute_symmetric_preserves_structure() {
+    let base = pseudo_random(7, 7, 83, 40);
+    let symmetric = &base + &base.create_transpose();
+    let perm = [6, 3, 0, 5, 1, 4, 2];
+    let permuted = symmetric.permute_symmetric(&perm).unwrap();
+    assert!(permuted.is_symmetric());
+    assert!(permuted.trace() == symmetric.trace());
+    let mut before = symmetric.diagonal().to_dense();
+    let mut after = permuted.diagonal().to_dense();
+    before.sort_by(f64::total_cmp);
+    after.sort_by(f64::total_cmp);
+    assert!(before == after);
+    // P A Pᵀ written with explicit permutation matrices
+    let p = SparseMatrix::from_triplets(7, 7, perm.iter().enumerate().map(|(i, &j)| (i, j, 1.0)))
+        .unwrap();
+    assert!(permuted == &(&p * &symmetric) * &p.create_transpose());
+}
+
+#[test]
+fn sparsemat_permute_rows_agrees_with_lu_permutation() {
+    let a = dominant(6, 84);
+    let lu = a.lu().unwrap();
+    let columns: Vec<usize> = (0..6).collect();
+    let pa = a.permute(lu.permutation(), &columns).unwrap();
+    assert!((&pa - &(lu.l() * lu.u())).norm_frobenius() < 1e-9);
+}
+
+#[test]
+fn sparsemat_permute_errors() {
+    let a = SparseMatrix::<f64>::empty_with_shape(3, 2);
+    let reason = |result: Result<SparseMatrix, SparseError>| match result.err() {
+        Some(SparseError::InvalidPermutation { reason }) => reason,
+        other => panic!("expected InvalidPermutation, got {other:?}"),
+    };
+    assert!(
+        reason(a.permute(&[0, 1], &[0, 1])) == "length must equal the dimension being permuted"
+    );
+    assert!(reason(a.permute(&[0, 1, 3], &[0, 1])) == "index out of range");
+    assert!(reason(a.permute(&[0, 1, 1], &[0, 1])) == "index repeated");
+    assert!(reason(a.permute(&[0, 1, 2], &[1, 1])) == "index repeated");
+    assert!(
+        a.permute_symmetric(&[0, 1, 2]).err() == Some(SparseError::NotSquare { shape: (3, 2) })
+    );
+    // Empty matrices have exactly one permutation
+    let empty = SparseMatrix::<f64>::new();
+    assert!(empty.permute_symmetric(&[]).unwrap().shape == (0, 0));
+}

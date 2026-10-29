@@ -44,6 +44,11 @@ pub enum SparseError {
         /// What is wrong with the arrays.
         reason: &'static str,
     },
+    /// A list meant to be a permutation of `0..len` is not one.
+    InvalidPermutation {
+        /// What is wrong with it.
+        reason: &'static str,
+    },
     /// The operation needs a square matrix.
     NotSquare {
         /// The shape `(rows, cols)` of the matrix.
@@ -111,6 +116,9 @@ impl fmt::Display for SparseError {
             }
             SparseError::InvalidCsr { reason } => {
                 write!(f, "invalid CSR arrays: {reason}")
+            }
+            SparseError::InvalidPermutation { reason } => {
+                write!(f, "invalid permutation: {reason}")
             }
             SparseError::NotSquare { shape } => {
                 write!(f, "matrix of shape {shape:?} is not square")
