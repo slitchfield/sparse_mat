@@ -178,6 +178,20 @@ checked method alongside it (`try_add`, `matmul`, `mul_vec`, `peek_at`, …).
 - [`docs/ai-reports/`](docs/ai-reports/) holds implementation reports for past branches.
 - API documentation: `cargo doc --open --all-features`.
 
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([`LICENSE-MIT`](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
+this work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without
+any additional terms or conditions.
+
 ## References
 
 The algorithms in this crate were written from the standard published descriptions below. No

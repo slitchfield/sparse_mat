@@ -2,6 +2,7 @@
 name = "sparse_mat"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 # Oldest supported Rust, checked by the MSRV job in .github/workflows/rust.yml. Raised by
 #   `<uN>::is_multiple_of` (1.87).
 rust-version = "1.87"
