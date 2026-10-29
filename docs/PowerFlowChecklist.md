@@ -149,8 +149,10 @@ Merged in PR #2.
 - [ ] Fuzz the Matrix Market parser with truncated, malformed and oversized input, and confirm
       it always errors instead of panicking.
 - [ ] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
-- [ ] Add package metadata (license, description, repository) and check `cargo package --list`.
-      There is no license file yet.
+- [x] License: dual MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`, and `license` in
+      `Cargo.toml`).
+- [ ] Add the remaining package metadata (`description`, `repository`) and check
+      `cargo package --list`, which currently warns that they are missing.
 - [ ] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
 - [ ] Decide whether to doctest the README by including it as crate docs
       (`#![doc = include_str!("../README.md")]`), so its example can't drift.
