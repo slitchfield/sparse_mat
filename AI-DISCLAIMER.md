@@ -69,7 +69,7 @@ If you believe any part of this repository should credit you or someone else, pl
 touch. That includes code that resembles yours, an idea that deserves a citation, or a reference
 that is wrong.
 
-- **How:** open an issue at <https://github.com/slitchfield/sparse_mat/issues>. If the matter is
+- **How:** open an issue at <https://github.com/slitchfield/ybus/issues>. If the matter is
   sensitive, open an issue asking for a private contact and the maintainer will follow up.
 - **What helps:** the file and lines concerned, the original source (a link, publication or
   repository), and what you think the correct attribution would be.

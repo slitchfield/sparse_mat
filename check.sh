@@ -9,8 +9,10 @@ cargo clippy --workspace --all-targets --all-features --  -D warnings -W clippy:
 cargo test --workspace --all-targets
 cargo test --workspace --all-targets --all-features
 # Each optional feature on its own, to catch code that only builds or lints cleanly when
-#   another feature is also enabled. Keep this list in sync with [features] in Cargo.toml.
-for feature in serde rayon; do
+#   another feature is also enabled. Keep this list in sync with [features] in
+#   sparse_mat/Cargo.toml. The workspace root has no features of its own, so each one is
+#   named with its crate.
+for feature in sparse_mat/serde sparse_mat/rayon; do
     cargo clippy --workspace --all-targets --features "$feature" -- -D warnings -W clippy::all
     cargo test --workspace --all-targets --features "$feature"
 done
