@@ -72,6 +72,8 @@ fn main() -> Result<(), SparseError> {
   owned and borrowed operands.
 - `try_add` and `try_sub` return `Result` instead of panicking.
 - `scale`, `hadamard`, and `map`/`apply` over stored entries.
+- `scale_rows(&v)` and `scale_cols(&v)` compute diag(v)·A and A·diag(v) without forming the
+  diagonal matrix.
 
 **Products**
 - Matrix × vector (`mul_vec`, `&a * &x`) and vector × matrix (`vec_mul`, `&x * &a`).

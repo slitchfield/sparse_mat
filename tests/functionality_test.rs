@@ -2149,3 +2149,68 @@ fn sparsemat_matrix_market_huge_entry_count_is_not_preallocated() {
     assert!(line == 3);
     assert!(message == format!("expected {} entries, found 1", usize::MAX));
 }
+
+#[test]
+fn sparsemat_scale_rows_matches_diagonal_product() {
+    let a = pseudo_random(5, 4, 61, 50);
+    let factors = [2.0, -1.0, 0.5, 3.0, -4.0];
+    let expected = SparseMatrix::from_diagonal(factors).matmul(&a).unwrap();
+    assert!(a.scale_rows(&factors).unwrap() == expected);
+}
+
+#[test]
+fn sparsemat_scale_cols_matches_diagonal_product() {
+    let a = pseudo_random(5, 4, 62, 50);
+    let factors = [2.0, -1.0, 0.5, 3.0];
+    let expected = a.matmul(&SparseMatrix::from_diagonal(factors)).unwrap();
+    assert!(a.scale_cols(&factors).unwrap() == expected);
+}
+
+#[test]
+fn sparsemat_scale_rows_cols_drop_zeros_and_keep_operand() {
+    let a = SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]);
+    let rows = a.scale_rows(&[0.0, 1.0]).unwrap();
+    assert!(rows.to_dense() == vec![vec![0.0, 0.0], vec![3.0, 4.0]]);
+    assert!(rows.num_nonzero() == 2);
+    let cols = a.scale_cols(&[1.0, 0.0]).unwrap();
+    assert!(cols.to_dense() == vec![vec![1.0, 0.0], vec![3.0, 0.0]]);
+    assert!(cols.num_nonzero() == 2);
+    // The operand is untouched, and an empty matrix scales to an empty matrix
+    assert!(a == SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]));
+    let empty = SparseMatrix::<f64>::empty_with_shape(0, 3);
+    assert!(empty.scale_rows(&[]).unwrap().shape == (0, 3));
+}
+
+#[test]
+fn sparsemat_scale_rows_cols_complex() {
+    use num_complex::Complex;
+    // diag(V) · A with complex voltages, as in power flow Jacobians
+    let a = SparseMatrix::from([
+        [Complex::new(1.0, 1.0), Complex::new(0.0, 0.0)],
+        [Complex::new(0.0, 0.0), Complex::new(2.0, 0.0)],
+    ]);
+    let v = [Complex::new(0.0, 1.0), Complex::new(1.0, -1.0)];
+    let scaled = a.scale_rows(&v).unwrap();
+    assert!(scaled[(0, 0)] == Complex::new(-1.0, 1.0));
+    assert!(scaled[(1, 1)] == Complex::new(2.0, -2.0));
+    assert!(a.scale_cols(&v).unwrap() == a.matmul(&SparseMatrix::from_diagonal(v)).unwrap());
+}
+
+#[test]
+fn sparsemat_scale_rows_cols_shape_mismatch() {
+    let a = SparseMatrix::<f64>::empty_with_shape(2, 3);
+    assert!(
+        a.scale_rows(&[1.0; 3]).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (3, 3),
+                right: (2, 3)
+            })
+    );
+    assert!(
+        a.scale_cols(&[1.0; 2]).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 3),
+                right: (2, 2)
+            })
+    );
+}
