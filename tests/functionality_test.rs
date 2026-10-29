@@ -2114,3 +2114,26 @@ fn sparsemat_from_csr_rows_overflow_is_an_error() {
             })
     );
 }
+
+#[test]
+#[should_panic(expected = "compressed storage")]
+fn sparsemat_csr_for_usize_max_rows_panics_clearly() {
+    // CSR needs rows + 1 pointers, which overflows
+    let local = SparseMatrix::<f64>::empty_with_shape(usize::MAX, 1);
+    let _ = local.iter().count();
+}
+
+#[test]
+#[should_panic(expected = "compressed storage")]
+fn sparsemat_csc_for_usize_max_cols_panics_clearly() {
+    let local = SparseMatrix::<f64>::empty_with_shape(1, usize::MAX);
+    let _ = local.col(0);
+}
+
+#[test]
+#[should_panic(expected = "compressed storage")]
+fn sparsemat_csr_too_large_to_allocate_panics_clearly() {
+    // No overflow in rows + 1, but 2^61 pointers is more bytes than an allocation can hold
+    let local = SparseMatrix::<f64>::empty_with_shape(1 << 61, 1);
+    let _ = local.iter().count();
+}
