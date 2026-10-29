@@ -2,7 +2,7 @@
 
 A sparse matrix library for Rust: construction, arithmetic, products, factorizations and
 iterative solvers, Matrix Market I/O, and optional `serde` and `rayon` support. It is generic
-over the element type (`f64` by default) and has one required dependency, `num-traits`.
+over the element type (`f64` by default) and has two required dependencies, `num-traits` and `num-complex`.
 
 It is being developed as the numerical foundation for a DC and AC power flow library; see
 [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md) for that roadmap.
@@ -65,13 +65,24 @@ fn main() -> Result<(), SparseError> {
   O(rows × cols).
 - `row(i)` and `col(j)` as `SparseVector`s, plus `row_iter`/`col_iter` over dense rows and
   columns.
-- `diagonal()` and `submatrix(rows, cols)`.
+- `diagonal()`, `submatrix(rows, cols)` for contiguous ranges, and `select(&rows, &cols)` for
+  arbitrary index lists in any order.
+- `permute(&row_perm, &col_perm)` and `permute_symmetric(&perm)` (P A Pᵀ), using the same
+  convention as `select`: row `i` of the result is row `perm[i]` of the input.
 
 **Arithmetic**
 - `+`, `-`, unary `-`, `+=`, `-=`, `*=` and scalar `*` (on either side for primitive types), for
   owned and borrowed operands.
 - `try_add` and `try_sub` return `Result` instead of panicking.
 - `scale`, `hadamard`, and `map`/`apply` over stored entries.
+- `scale_rows(&v)` and `scale_cols(&v)` compute diag(v)·A and A·diag(v) without forming the
+  diagonal matrix.
+
+**Complex matrices**
+- `conj()`, `adjoint()` (conjugate transpose), and `real()`/`imag()` for the parts. These are
+  generic over `ComplexFloat`, so on `f32`/`f64` matrices `conj` is a copy, `adjoint` the
+  transpose and `imag` empty.
+- `SparseMatrix::from_parts(&re, &im)` builds a complex matrix and inverts `real`/`imag`.
 
 **Products**
 - Matrix × vector (`mul_vec`, `&a * &x`) and vector × matrix (`vec_mul`, `&x * &a`).
@@ -103,10 +114,10 @@ fn main() -> Result<(), SparseError> {
 ## Element types
 
 `SparseMatrix<T>` accepts any `Scalar`, meaning any `Copy + PartialEq + num_traits::Num`
-type. That covers `f32`, `f64`, every integer type and `num_complex::Complex`. Arithmetic,
-products and conversions work for all of them. Norms and solvers need `num_traits::Float`, so
-today they cover `f32` and `f64` but not complex numbers. Complex-capable solvers are on the
-roadmap.
+type. That covers `f32`, `f64`, every integer type and `num_complex::Complex` (re-exported as
+`sparse_mat::Complex`). Arithmetic, products and conversions work for all of them. Norms and
+solvers need `num_traits::Float`, so today they cover `f32` and `f64` but not complex numbers.
+Complex-capable solvers are on the roadmap.
 
 Rust does not apply a type parameter's default in expressions, so a call with nothing to infer
 `T` from needs it spelled out: `SparseMatrix::<f64>::new()`.

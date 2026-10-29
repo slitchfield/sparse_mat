@@ -6,12 +6,14 @@ use crate::Scalar;
 
 mod access;
 mod blocks;
+mod complex;
 mod matrix_market;
 mod ops;
 #[cfg(feature = "rayon")]
 mod parallel;
 mod product;
 mod properties;
+mod reorder;
 #[cfg(feature = "serde")]
 mod serde_impl;
 mod solvers;

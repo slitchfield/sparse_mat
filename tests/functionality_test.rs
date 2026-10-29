@@ -2149,3 +2149,297 @@ fn sparsemat_matrix_market_huge_entry_count_is_not_preallocated() {
     assert!(line == 3);
     assert!(message == format!("expected {} entries, found 1", usize::MAX));
 }
+
+#[test]
+fn sparsemat_scale_rows_matches_diagonal_product() {
+    let a = pseudo_random(5, 4, 61, 50);
+    let factors = [2.0, -1.0, 0.5, 3.0, -4.0];
+    let expected = SparseMatrix::from_diagonal(factors).matmul(&a).unwrap();
+    assert!(a.scale_rows(&factors).unwrap() == expected);
+}
+
+#[test]
+fn sparsemat_scale_cols_matches_diagonal_product() {
+    let a = pseudo_random(5, 4, 62, 50);
+    let factors = [2.0, -1.0, 0.5, 3.0];
+    let expected = a.matmul(&SparseMatrix::from_diagonal(factors)).unwrap();
+    assert!(a.scale_cols(&factors).unwrap() == expected);
+}
+
+#[test]
+fn sparsemat_scale_rows_cols_drop_zeros_and_keep_operand() {
+    let a = SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]);
+    let rows = a.scale_rows(&[0.0, 1.0]).unwrap();
+    assert!(rows.to_dense() == vec![vec![0.0, 0.0], vec![3.0, 4.0]]);
+    assert!(rows.num_nonzero() == 2);
+    let cols = a.scale_cols(&[1.0, 0.0]).unwrap();
+    assert!(cols.to_dense() == vec![vec![1.0, 0.0], vec![3.0, 0.0]]);
+    assert!(cols.num_nonzero() == 2);
+    // The operand is untouched, and an empty matrix scales to an empty matrix
+    assert!(a == SparseMatrix::from([[1.0, 2.0], [3.0, 4.0]]));
+    let empty = SparseMatrix::<f64>::empty_with_shape(0, 3);
+    assert!(empty.scale_rows(&[]).unwrap().shape == (0, 3));
+}
+
+#[test]
+fn sparsemat_scale_rows_cols_complex() {
+    use num_complex::Complex;
+    // diag(V) · A with complex voltages, as in power flow Jacobians
+    let a = SparseMatrix::from([
+        [Complex::new(1.0, 1.0), Complex::new(0.0, 0.0)],
+        [Complex::new(0.0, 0.0), Complex::new(2.0, 0.0)],
+    ]);
+    let v = [Complex::new(0.0, 1.0), Complex::new(1.0, -1.0)];
+    let scaled = a.scale_rows(&v).unwrap();
+    assert!(scaled[(0, 0)] == Complex::new(-1.0, 1.0));
+    assert!(scaled[(1, 1)] == Complex::new(2.0, -2.0));
+    assert!(a.scale_cols(&v).unwrap() == a.matmul(&SparseMatrix::from_diagonal(v)).unwrap());
+}
+
+#[test]
+fn sparsemat_scale_rows_cols_shape_mismatch() {
+    let a = SparseMatrix::<f64>::empty_with_shape(2, 3);
+    assert!(
+        a.scale_rows(&[1.0; 3]).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (3, 3),
+                right: (2, 3)
+            })
+    );
+    assert!(
+        a.scale_cols(&[1.0; 2]).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 3),
+                right: (2, 2)
+            })
+    );
+}
+
+#[test]
+fn sparsemat_select_matches_submatrix_for_ranges() {
+    let a = pseudo_random(6, 7, 71, 45);
+    let rows: Vec<usize> = (1..5).collect();
+    let cols: Vec<usize> = (2..7).collect();
+    assert!(a.select(&rows, &cols).unwrap() == a.submatrix(1..5, 2..7).unwrap());
+}
+
+#[test]
+fn sparsemat_select_reorders_and_skips() {
+    let a = SparseMatrix::from([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]);
+    // Rows 2 then 0, columns 2 then 1: non-contiguous and reversed
+    let picked = a.select(&[2, 0], &[2, 1]).unwrap();
+    assert!(picked.to_dense() == vec![vec![9.0, 8.0], vec![3.0, 2.0]]);
+}
+
+#[test]
+fn sparsemat_select_repeated_indices() {
+    let a = SparseMatrix::from([[1.0, 0.0], [0.0, 2.0]]);
+    let repeated = a.select(&[1, 1, 0], &[0, 1, 1]).unwrap();
+    assert!(
+        repeated.to_dense()
+            == vec![
+                vec![0.0, 2.0, 2.0],
+                vec![0.0, 2.0, 2.0],
+                vec![1.0, 0.0, 0.0]
+            ]
+    );
+}
+
+#[test]
+fn sparsemat_select_matches_dense_selection() {
+    let a = pseudo_random(8, 8, 72, 40);
+    let dense = a.to_dense();
+    // A PV/PQ-style split: an arbitrary subset in a scrambled order
+    let rows = [7, 1, 4, 2];
+    let cols = [3, 0, 6, 5, 1];
+    let expected: Vec<Vec<f64>> = rows
+        .iter()
+        .map(|&r| cols.iter().map(|&c| dense[r][c]).collect())
+        .collect();
+    assert!(a.select(&rows, &cols).unwrap().to_dense() == expected);
+}
+
+#[test]
+fn sparsemat_select_empty_and_out_of_range() {
+    let a = sample_4x6();
+    let none = a.select(&[], &[0, 1]).unwrap();
+    assert!(none.shape == (0, 2) && none.num_nonzero() == 0);
+    assert!(a.select(&[0, 4], &[0]).err() == Some(SparseError::OutOfRange { index: 4, len: 4 }));
+    assert!(a.select(&[0], &[9]).err() == Some(SparseError::OutOfRange { index: 9, len: 6 }));
+}
+
+fn inverse_of(perm: &[usize]) -> Vec<usize> {
+    let mut inverse = vec![0; perm.len()];
+    for (position, &index) in perm.iter().enumerate() {
+        inverse[index] = position;
+    }
+    inverse
+}
+
+#[test]
+fn sparsemat_permute_matches_select() {
+    let a = pseudo_random(5, 4, 81, 50);
+    let (rows, cols) = ([3, 0, 4, 1, 2], [2, 3, 0, 1]);
+    assert!(a.permute(&rows, &cols).unwrap() == a.select(&rows, &cols).unwrap());
+}
+
+#[test]
+fn sparsemat_permute_then_inverse_is_identity() {
+    let a = pseudo_random(6, 5, 82, 45);
+    let (rows, cols) = ([5, 2, 0, 4, 1, 3], [4, 0, 3, 1, 2]);
+    let permuted = a.permute(&rows, &cols).unwrap();
+    assert!(permuted != a);
+    let restored = permuted
+        .permute(&inverse_of(&rows), &inverse_of(&cols))
+        .unwrap();
+    assert!(restored == a);
+    // The identity permutation changes nothing
+    assert!(a.permute(&[0, 1, 2, 3, 4, 5], &[0, 1, 2, 3, 4]).unwrap() == a);
+}
+
+#[test]
+fn sparsemat_permute_symmetric_preserves_structure() {
+    let base = pseudo_random(7, 7, 83, 40);
+    let symmetric = &base + &base.create_transpose();
+    let perm = [6, 3, 0, 5, 1, 4, 2];
+    let permuted = symmetric.permute_symmetric(&perm).unwrap();
+    assert!(permuted.is_symmetric());
+    assert!(permuted.trace() == symmetric.trace());
+    let mut before = symmetric.diagonal().to_dense();
+    let mut after = permuted.diagonal().to_dense();
+    before.sort_by(f64::total_cmp);
+    after.sort_by(f64::total_cmp);
+    assert!(before == after);
+    // P A Pᵀ written with explicit permutation matrices
+    let p = SparseMatrix::from_triplets(7, 7, perm.iter().enumerate().map(|(i, &j)| (i, j, 1.0)))
+        .unwrap();
+    assert!(permuted == &(&p * &symmetric) * &p.create_transpose());
+}
+
+#[test]
+fn sparsemat_permute_rows_agrees_with_lu_permutation() {
+    let a = dominant(6, 84);
+    let lu = a.lu().unwrap();
+    let columns: Vec<usize> = (0..6).collect();
+    let pa = a.permute(lu.permutation(), &columns).unwrap();
+    assert!((&pa - &(lu.l() * lu.u())).norm_frobenius() < 1e-9);
+}
+
+#[test]
+fn sparsemat_permute_errors() {
+    let a = SparseMatrix::<f64>::empty_with_shape(3, 2);
+    let reason = |result: Result<SparseMatrix, SparseError>| match result.err() {
+        Some(SparseError::InvalidPermutation { reason }) => reason,
+        other => panic!("expected InvalidPermutation, got {other:?}"),
+    };
+    assert!(
+        reason(a.permute(&[0, 1], &[0, 1])) == "length must equal the dimension being permuted"
+    );
+    assert!(reason(a.permute(&[0, 1, 3], &[0, 1])) == "index out of range");
+    assert!(reason(a.permute(&[0, 1, 1], &[0, 1])) == "index repeated");
+    assert!(reason(a.permute(&[0, 1, 2], &[1, 1])) == "index repeated");
+    assert!(
+        a.permute_symmetric(&[0, 1, 2]).err() == Some(SparseError::NotSquare { shape: (3, 2) })
+    );
+    // Empty matrices have exactly one permutation
+    let empty = SparseMatrix::<f64>::new();
+    assert!(empty.permute_symmetric(&[]).unwrap().shape == (0, 0));
+}
+
+fn pseudo_random_complex(
+    rows: usize,
+    cols: usize,
+    seed: u64,
+) -> SparseMatrix<num_complex::Complex<f64>> {
+    let re = pseudo_random(rows, cols, seed, 40);
+    let im = pseudo_random(rows, cols, seed + 1000, 40);
+    SparseMatrix::from_parts(&re, &im).unwrap()
+}
+
+#[test]
+fn sparsemat_from_parts_round_trips_real_and_imag() {
+    let a = pseudo_random_complex(6, 5, 91);
+    let (re, im) = (a.real(), a.imag());
+    assert!(re.shape == (6, 5) && im.shape == (6, 5));
+    assert!(SparseMatrix::from_parts(&re, &im).unwrap() == a);
+}
+
+#[test]
+fn sparsemat_real_and_imag_drop_zero_parts() {
+    use num_complex::Complex;
+    let a = SparseMatrix::from([
+        [Complex::new(1.0, 0.0), Complex::new(0.0, 2.0)],
+        [Complex::new(3.0, -4.0), Complex::new(0.0, 0.0)],
+    ]);
+    let re = a.real();
+    let im = a.imag();
+    assert!(re.to_dense() == vec![vec![1.0, 0.0], vec![3.0, 0.0]]);
+    assert!(im.to_dense() == vec![vec![0.0, 2.0], vec![-4.0, 0.0]]);
+    // The purely imaginary entry is absent from the real part, and vice versa
+    assert!(re.num_nonzero() == 2 && im.num_nonzero() == 2);
+}
+
+#[test]
+fn sparsemat_conj_and_adjoint() {
+    use num_complex::Complex;
+    let a = SparseMatrix::from([
+        [Complex::new(1.0, 2.0), Complex::new(0.0, -1.0)],
+        [Complex::new(0.0, 0.0), Complex::new(3.0, 0.0)],
+    ]);
+    let conjugated = a.conj();
+    assert!(conjugated[(0, 0)] == Complex::new(1.0, -2.0));
+    assert!(conjugated[(0, 1)] == Complex::new(0.0, 1.0));
+    assert!(conjugated.conj() == a);
+
+    let adjoint = a.adjoint();
+    assert!(adjoint == a.conj().create_transpose());
+    assert!(adjoint[(1, 0)] == Complex::new(0.0, 1.0));
+    assert!(adjoint.adjoint() == a);
+}
+
+#[test]
+fn sparsemat_adjoint_reverses_products() {
+    // (AB)ᴴ = Bᴴ Aᴴ, on a rectangular pair
+    let a = pseudo_random_complex(4, 3, 92);
+    let b = pseudo_random_complex(3, 5, 93);
+    assert!((&a * &b).adjoint() == &b.adjoint() * &a.adjoint());
+}
+
+#[test]
+fn sparsemat_hermitian_matrix_is_its_own_adjoint() {
+    let a = pseudo_random_complex(5, 5, 94);
+    let hermitian = &a + &a.adjoint();
+    assert!(hermitian.adjoint() == hermitian);
+    // Its diagonal is real
+    assert!(hermitian
+        .diagonal()
+        .values()
+        .iter()
+        .all(|val| val.im == 0.0));
+}
+
+#[test]
+fn sparsemat_complex_helpers_on_real_matrices() {
+    let a = pseudo_random(4, 6, 95, 50);
+    assert!(a.conj() == a);
+    assert!(a.adjoint() == a.create_transpose());
+    assert!(a.real() == a);
+    let imaginary = a.imag();
+    assert!(imaginary.shape == (4, 6) && imaginary.num_nonzero() == 0);
+
+    let single = SparseMatrix::from([[1.0f32, 0.0], [0.0, -2.0]]);
+    assert!(single.adjoint() == single.create_transpose());
+}
+
+#[test]
+fn sparsemat_from_parts_shape_mismatch() {
+    let re = SparseMatrix::<f64>::empty_with_shape(2, 3);
+    let im = SparseMatrix::<f64>::empty_with_shape(3, 2);
+    assert!(
+        SparseMatrix::from_parts(&re, &im).err()
+            == Some(SparseError::ShapeMismatch {
+                left: (2, 3),
+                right: (3, 2)
+            })
+    );
+}

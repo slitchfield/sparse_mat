@@ -310,3 +310,50 @@ impl<T: Scalar> SparseMatrix<T> {
         self.invalidate();
     }
 }
+
+impl<T: Scalar> SparseMatrix<T> {
+    /// Scales each row `i` by `factors[i]`, giving the product `diag(factors) · A` as a new
+    /// matrix without forming the diagonal matrix.
+    ///
+    /// Products that are exactly zero (such as every entry of a row scaled by zero) are not
+    /// stored. Returns `SparseError::ShapeMismatch` unless there is one factor per row, with
+    /// `factors` reported as the square diagonal matrix it stands for.
+    pub fn scale_rows(&self, factors: &[T]) -> Result<SparseMatrix<T>, SparseError> {
+        if factors.len() != self.shape.0 {
+            return Err(SparseError::ShapeMismatch {
+                left: (factors.len(), factors.len()),
+                right: self.shape,
+            });
+        }
+        Ok(self.scale_entries(|row, _, val| factors[row] * val))
+    }
+
+    /// Scales each column `j` by `factors[j]`, giving the product `A · diag(factors)` as a new
+    /// matrix without forming the diagonal matrix.
+    ///
+    /// Products that are exactly zero are not stored. Returns `SparseError::ShapeMismatch`
+    /// unless there is one factor per column, with `factors` reported as the square diagonal
+    /// matrix it stands for.
+    pub fn scale_cols(&self, factors: &[T]) -> Result<SparseMatrix<T>, SparseError> {
+        if factors.len() != self.shape.1 {
+            return Err(SparseError::ShapeMismatch {
+                left: self.shape,
+                right: (factors.len(), factors.len()),
+            });
+        }
+        Ok(self.scale_entries(|_, col, val| val * factors[col]))
+    }
+
+    /// A new matrix with each entry replaced by `scaled(row, col, value)`, dropping zeros.
+    fn scale_entries(&self, scaled: impl Fn(usize, usize, T) -> T) -> SparseMatrix<T> {
+        let values = self
+            .values
+            .iter()
+            .filter_map(|(&(row, col), &val)| {
+                let product = scaled(row, col, val);
+                (product != T::zero()).then_some(((row, col), product))
+            })
+            .collect();
+        SparseMatrix::from_values(self.shape, values)
+    }
+}

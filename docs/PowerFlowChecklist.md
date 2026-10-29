@@ -38,16 +38,18 @@ Merged in PR #2.
 
 ## Phase 1: Cheap primitives
 
-- [ ] **Decide:** whether `num-complex` is always a dependency or behind a `complex` feature.
-      Recommended: always on, since it's small and both Phase 1 and Phase 4 need it.
-- [ ] `scale_rows(&[T])` and `scale_cols(&[T])` (diag(v)·A and A·diag(v)), with
+- [x] **Decide:** whether `num-complex` is always a dependency or behind a `complex` feature.
+      Decided: always a dependency, re-exported as `sparse_mat::num_complex` and
+      `sparse_mat::Complex`.
+- [x] `scale_rows(&[T])` and `scale_cols(&[T])` (diag(v)·A and A·diag(v)), with
       `ShapeMismatch` on a wrong length. Test against `from_diagonal(v) * A`.
-- [ ] `select(rows: &[usize], cols: &[usize])` for non-contiguous index sets. Rows and columns
-      come out in the order given; `OutOfRange` on a bad index; repeated indices either allowed
-      or rejected, documented either way. Test that `select` with ranges matches `submatrix`.
-- [ ] `permute(row_perm, col_perm)` and `permute_symmetric(perm)`, validating that each is a
+- [x] `select(rows: &[usize], cols: &[usize])` for non-contiguous index sets. Rows and columns
+      come out in the order given; `OutOfRange` on a bad index; repeated indices are allowed and
+      repeat the row or column (decided and documented). Test that `select` with ranges matches
+      `submatrix`.
+- [x] `permute(row_perm, col_perm)` and `permute_symmetric(perm)`, validating that each is a
       permutation. Test that a permutation followed by its inverse is the identity.
-- [ ] Complex helpers: `conj()` (identity for real types via `ComplexFloat`), `adjoint()`,
+- [x] Complex helpers: `conj()` (identity for real types via `ComplexFloat`), `adjoint()`,
       `real()`, `imag()`, and `from_parts(re, im)`. Test that `from_parts(a.real(), a.imag())`
       gives back `a`.
 

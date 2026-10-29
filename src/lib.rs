@@ -20,3 +20,8 @@ impl<T: Copy + PartialEq + num_traits::Num> Scalar for T {}
 
 /// The error type returned by `SparseMatrix` operations.
 pub mod sparse_error;
+
+/// Re-exported so callers use the same `num-complex` version as this crate.
+pub use num_complex;
+/// Re-exported for convenience: `SparseMatrix<Complex<f64>>` is a first-class matrix type.
+pub use num_complex::Complex;
