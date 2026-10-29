@@ -60,7 +60,14 @@ Merged in PR #2.
       crate into a subdirectory; `check.sh` already uses `--workspace`.
       Decided: a workspace. The repository is renamed `ybus`; the crates are `sparse_mat/` and
       `powerflow/`.
-- [ ] **Decide:** confirm the MATPOWER license terms before vendoring its case files as test data.
+- [x] **Decide:** confirm the MATPOWER license terms before vendoring its case files as test data.
+      Decided: don't vendor the case files. MATPOWER's code is BSD 3-clause, but its LICENSE
+      says the case files are not covered by it, so `scripts/fetch-matpower.sh` downloads a
+      pinned release (8.1, SHA-256 checked) into the gitignored `testdata/` instead. Reference
+      results computed from case14, case30 and case118 are committed, since those cases come
+      from the public UW test case archive and published papers. Nothing derived from
+      case2383wp is committed: its data is distributed with the provider's permission, whose
+      scope isn't stated.
 - [ ] Case model: buses (type, demand, shunts, voltage limits), branches (r, x, b, tap, shift,
       status) and generators, in per unit.
 - [ ] MATPOWER case reader for the `mpc.bus`, `mpc.branch`, `mpc.gen` and `mpc.baseMVA` matrices
