@@ -2102,3 +2102,15 @@ fn sparsemat_matrix_market_io_error_is_reported() {
     let result = SparseMatrix::<f64>::identity(2).write_matrix_market(FailingWriter);
     assert!(matches!(result, Err(SparseError::Io { message }) if message.contains("no space")));
 }
+
+#[test]
+fn sparsemat_from_csr_rows_overflow_is_an_error() {
+    // rows + 1 does not fit in a usize, so no row_ptr can have the right length
+    let result = SparseMatrix::<f64>::from_csr(usize::MAX, 1, vec![0], vec![], vec![]);
+    assert!(
+        result.err()
+            == Some(SparseError::InvalidCsr {
+                reason: "row_ptr must have rows + 1 entries"
+            })
+    );
+}

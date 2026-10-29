@@ -349,7 +349,8 @@ impl<T: Scalar> SparseMatrix<T> {
         data: Vec<T>,
     ) -> Result<SparseMatrix<T>, SparseError> {
         let invalid = |reason| Err(SparseError::InvalidCsr { reason });
-        if row_ptr.len() != rows + 1 {
+        // Checked: rows + 1 overflows for rows == usize::MAX, and no row_ptr can be that long
+        if rows.checked_add(1) != Some(row_ptr.len()) {
             return invalid("row_ptr must have rows + 1 entries");
         }
         if col_idx.len() != data.len() {
