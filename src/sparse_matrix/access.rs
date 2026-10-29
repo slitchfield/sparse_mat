@@ -1,6 +1,7 @@
 //! Read access to a matrix's stored entries, rows and columns.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ops::{Index, Range};
 
 use super::{Compressed, SparseMatrix};
@@ -246,6 +247,51 @@ impl<T: Scalar> SparseMatrix<T> {
             .map(|((row, col), val)| ((row - rows.start, col - cols.start), *val))
             .collect();
         Ok(SparseMatrix::from_values((rows.len(), cols.len()), values))
+    }
+
+    /// Extracts the rows and columns named by two index lists, as a new matrix of shape
+    /// `(rows.len(), cols.len())`: entry `(i, j)` of the result is entry `(rows[i], cols[j])`
+    /// of `self`.
+    ///
+    /// Unlike `submatrix`, the indices need not be contiguous or sorted, so this can pull out
+    /// any subset (such as the PV and PQ buses of a power system) in any order. An index may
+    /// appear more than once, which repeats that row or column, as multiplying by a selection
+    /// matrix would. Makes one pass over the stored entries. Returns `SparseError::OutOfRange`
+    /// for the first index that is not a row or column of the matrix.
+    pub fn select(&self, rows: &[usize], cols: &[usize]) -> Result<SparseMatrix<T>, SparseError> {
+        let row_positions = Self::positions_by_index(rows, self.shape.0)?;
+        let col_positions = Self::positions_by_index(cols, self.shape.1)?;
+
+        let mut values = HashMap::new();
+        for (&(row, col), &val) in self.values.iter() {
+            let (Some(out_rows), Some(out_cols)) =
+                (row_positions.get(&row), col_positions.get(&col))
+            else {
+                continue;
+            };
+            for &out_row in out_rows {
+                for &out_col in out_cols {
+                    values.insert((out_row, out_col), val);
+                }
+            }
+        }
+        Ok(SparseMatrix::from_values((rows.len(), cols.len()), values))
+    }
+
+    /// Maps each index in `indices` to the output positions it appears at, checking that every
+    /// index is below `len`.
+    fn positions_by_index(
+        indices: &[usize],
+        len: usize,
+    ) -> Result<HashMap<usize, Vec<usize>>, SparseError> {
+        let mut positions: HashMap<usize, Vec<usize>> = HashMap::with_capacity(indices.len());
+        for (position, &index) in indices.iter().enumerate() {
+            if index >= len {
+                return Err(SparseError::OutOfRange { index, len });
+            }
+            positions.entry(index).or_default().push(position);
+        }
+        Ok(positions)
     }
 }
 

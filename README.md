@@ -65,7 +65,8 @@ fn main() -> Result<(), SparseError> {
   O(rows × cols).
 - `row(i)` and `col(j)` as `SparseVector`s, plus `row_iter`/`col_iter` over dense rows and
   columns.
-- `diagonal()` and `submatrix(rows, cols)`.
+- `diagonal()`, `submatrix(rows, cols)` for contiguous ranges, and `select(&rows, &cols)` for
+  arbitrary index lists in any order.
 
 **Arithmetic**
 - `+`, `-`, unary `-`, `+=`, `-=`, `*=` and scalar `*` (on either side for primitive types), for

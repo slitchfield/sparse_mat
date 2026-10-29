@@ -2214,3 +2214,56 @@ fn sparsemat_scale_rows_cols_shape_mismatch() {
             })
     );
 }
+
+#[test]
+fn sparsemat_select_matches_submatrix_for_ranges() {
+    let a = pseudo_random(6, 7, 71, 45);
+    let rows: Vec<usize> = (1..5).collect();
+    let cols: Vec<usize> = (2..7).collect();
+    assert!(a.select(&rows, &cols).unwrap() == a.submatrix(1..5, 2..7).unwrap());
+}
+
+#[test]
+fn sparsemat_select_reorders_and_skips() {
+    let a = SparseMatrix::from([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]);
+    // Rows 2 then 0, columns 2 then 1: non-contiguous and reversed
+    let picked = a.select(&[2, 0], &[2, 1]).unwrap();
+    assert!(picked.to_dense() == vec![vec![9.0, 8.0], vec![3.0, 2.0]]);
+}
+
+#[test]
+fn sparsemat_select_repeated_indices() {
+    let a = SparseMatrix::from([[1.0, 0.0], [0.0, 2.0]]);
+    let repeated = a.select(&[1, 1, 0], &[0, 1, 1]).unwrap();
+    assert!(
+        repeated.to_dense()
+            == vec![
+                vec![0.0, 2.0, 2.0],
+                vec![0.0, 2.0, 2.0],
+                vec![1.0, 0.0, 0.0]
+            ]
+    );
+}
+
+#[test]
+fn sparsemat_select_matches_dense_selection() {
+    let a = pseudo_random(8, 8, 72, 40);
+    let dense = a.to_dense();
+    // A PV/PQ-style split: an arbitrary subset in a scrambled order
+    let rows = [7, 1, 4, 2];
+    let cols = [3, 0, 6, 5, 1];
+    let expected: Vec<Vec<f64>> = rows
+        .iter()
+        .map(|&r| cols.iter().map(|&c| dense[r][c]).collect())
+        .collect();
+    assert!(a.select(&rows, &cols).unwrap().to_dense() == expected);
+}
+
+#[test]
+fn sparsemat_select_empty_and_out_of_range() {
+    let a = sample_4x6();
+    let none = a.select(&[], &[0, 1]).unwrap();
+    assert!(none.shape == (0, 2) && none.num_nonzero() == 0);
+    assert!(a.select(&[0, 4], &[0]).err() == Some(SparseError::OutOfRange { index: 4, len: 4 }));
+    assert!(a.select(&[0], &[9]).err() == Some(SparseError::OutOfRange { index: 9, len: 6 }));
+}
