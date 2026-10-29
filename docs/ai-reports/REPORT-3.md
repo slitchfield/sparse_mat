@@ -1,14 +1,14 @@
 # Implementation report: `dev/claude/housekeeping`
 
 This branch clears the Housekeeping section of the power flow plan
-(`docs/PowerFlowChecklist.md`), the items left over from the PR #1 pre-push review. It has six
-commits, one per checklist item plus this report, on top of `main` at `b862b98`. Fuzzing the
-Matrix Market reader found a real overflow bug, which is fixed here. It also found a second
-overflow that needs a decision from you; see [Open decision](#open-decision).
+(`docs/PowerFlowChecklist.md`), the items left over from the PR #1 pre-push review. It has seven
+commits (one per checklist item, this report, and a recorded decision) on top of `main` at
+`b862b98`. Fuzzing the Matrix Market reader found a real overflow bug, which is fixed here.
+It also found a second overflow, which is kept as documented behaviour; see [Open decision](#open-decision).
 
 | | `main` | `dev/claude/housekeeping` |
 |---|---|---|
-| Housekeeping items done | 1 of 5 | 5 of 5, plus one new **Decide** item |
+| Housekeeping items done | 1 of 5 | 5 of 5, plus one new **Decide** item (decided) |
 | Tests (all features) | 186 (176 core, 6 `rayon`, 4 `serde`), 0 doctests | 191 (176 core, 5 fuzz, 6 `rayon`, 4 `serde`), 1 doctest |
 | CI jobs | Check, MSRV | Check, MSRV, Dependencies |
 | `cargo package --list` | warns: no description or repository | no warnings |
@@ -128,9 +128,8 @@ inputs didn't hit this; a targeted probe did. Two options:
    provide and floats don't implement as `CheckedAdd`. It would mean a new trait in `Scalar`'s
    bounds, which affects every generic signature.
 
-I recommend option 1: integer matrices are a side use of a crate aimed at `f64` and
-`Complex<f64>` power flow. It's recorded as a **Decide** item in the checklist's Housekeeping
-section, so the section isn't fully ticked until you choose.
+**Decided: option 1.** Integer matrices are a side use of a crate aimed at `f64` and
+`Complex<f64>` power flow. The decision is recorded in the checklist's Housekeeping section.
 
 ## Verification
 
@@ -153,5 +152,5 @@ section, so the section isn't fully ticked until you choose.
 - **Coverage-guided fuzzing:** a `cargo-fuzz` target on nightly would explore input space
   more systematically than these fixed-seed tests. It's worth adding if the case reader in
   Phase 1.5 grows its own text parser, since a MATPOWER `.m` reader has the same risks.
-- With Housekeeping done (apart from the decision above), next is Phase 1.5, starting with its
+- With Housekeeping done, next is Phase 1.5, starting with its
   two **Decide** items: workspace or separate repo, and the MATPOWER license terms.

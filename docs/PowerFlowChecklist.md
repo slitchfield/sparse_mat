@@ -149,9 +149,9 @@ Merged in PR #2.
 - [x] Fuzz the Matrix Market parser with truncated, malformed and oversized input, and confirm
       it always errors instead of panicking. Done as deterministic tests
       (`tests/matrix_market_fuzz_test.rs`); fixed a skew-symmetric negation overflow.
-- [ ] **Decide:** integer overflow when summing duplicate entries (`from_triplets`, and so the
+- [x] **Decide:** integer overflow when summing duplicate entries (`from_triplets`, and so the
       Matrix Market reader) panics in debug builds. Keep integer `+` semantics (documented), or
-      add a checked-add bound so it can return an error.
+      add a checked-add bound so it can return an error. Decided: keep integer `+` semantics.
 - [x] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
       `cargo deny` (advisories, licenses, bans, sources) is configured in `deny.toml` and runs
       in a CI job.
