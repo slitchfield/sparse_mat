@@ -2137,3 +2137,15 @@ fn sparsemat_csr_too_large_to_allocate_panics_clearly() {
     let local = SparseMatrix::<f64>::empty_with_shape(1 << 61, 1);
     let _ = local.iter().count();
 }
+
+#[test]
+fn sparsemat_matrix_market_huge_entry_count_is_not_preallocated() {
+    // A header can claim any entry count; it must not be trusted as an allocation size
+    let text = format!(
+        "%%MatrixMarket matrix coordinate real general\n2 2 {}\n1 1 1\n",
+        usize::MAX
+    );
+    let (line, message) = parse_failure(&text);
+    assert!(line == 3);
+    assert!(message == format!("expected {} entries, found 1", usize::MAX));
+}
