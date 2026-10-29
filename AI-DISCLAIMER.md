@@ -87,6 +87,10 @@ licensing follows current best practices for AI-assisted software development:
   ecosystem, applied to the whole repository, including AI-assisted portions.
 - **No third-party code:** no source code from other projects is included, so there are no
   inherited license obligations to track.
+- **Third-party test data:** MATPOWER's case files are not included; a script downloads them
+  for testing. The repository does include DC power flow results that MATPOWER computed from
+  three public test cases, as expected values for tests. Their sources are credited in
+  [`powerflow/tests/data/matpower-reference/README.md`](powerflow/tests/data/matpower-reference/README.md).
 - **Compatible dependencies:** every dependency, including transitive ones, is under a compatible
   permissive license (MIT, Apache-2.0, Unlicense or Unicode-3.0).
 - **Transparency:** AI involvement is disclosed in this document, in commit trailers and in the

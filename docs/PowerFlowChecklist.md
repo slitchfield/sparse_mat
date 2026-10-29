@@ -77,7 +77,9 @@ Merged in PR #2.
 - [ ] DC power flow: drop the slack row and column with `select`, solve B′θ = P with
       `cholesky`, then compute branch flows.
 - [ ] Reference results: MATPOWER `rundcpf` outputs for case14, case30 and case118 checked into
-      test data. Tests compare angles and flows within a stated tolerance.
+      test data. Tests compare angles and flows within a stated tolerance. The results are
+      generated and committed (`powerflow/tests/data/matpower-reference/`, by
+      `scripts/generate-reference.sh`); the comparison tests come with the DC power flow.
 - [ ] Benchmark harness (criterion) running DC power flow on the largest available case, so
       later phases have a baseline.
 

@@ -22,6 +22,12 @@ API overview, and [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md) for
   `sparse_mat` feature alone, plus doc tests (including the `sparse_mat` README's example).
 - **Dependencies:** `cargo deny --all-features check` checks advisories, licenses, banned
   crates and sources against `deny.toml`. The Dependencies CI job runs it.
+- **MATPOWER test data:** `scripts/fetch-matpower.sh` downloads a pinned MATPOWER release
+  (checksum verified) into the gitignored `testdata/`; set `MATPOWER_DIR` to use an existing
+  installation instead. `scripts/generate-reference.sh` regenerates the committed DC power flow
+  reference results in
+  [`powerflow/tests/data/matpower-reference/`](powerflow/tests/data/matpower-reference/), and
+  needs Octave.
 
 ## Documentation
 
@@ -91,7 +97,10 @@ The current terms of the most relevant implementations:
   copyright notices are kept.
 - **SuiteSparse CSparse, CXSparse, KLU and BTF:** LGPL 2.1 or later. Porting their code would
   bring LGPL obligations, so implement from the papers instead.
-- **MATPOWER:** the code is BSD 3-clause. Its case files have their own provenance, so check
-  each file's header before vendoring them as test data.
+- **MATPOWER:** the code is BSD 3-clause. Its `LICENSE` says the case files are not covered by
+  that license, so this repository doesn't include them: `scripts/fetch-matpower.sh` downloads
+  them. Results computed from the public-source cases (case14, case30, case118) are committed,
+  with each case's origin credited in
+  [their README](powerflow/tests/data/matpower-reference/README.md).
 
 Before relying on these, check them against each project's current `LICENSE` file.
