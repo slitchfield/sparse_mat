@@ -2,7 +2,15 @@
 name = "sparse_mat"
 version = "0.1.0"
 edition = "2021"
+description = "Sparse matrices for Rust: assembly, products, LU/Cholesky/CG solvers and Matrix Market I/O"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/slitchfield/sparse_mat"
+readme = "README.md"
+keywords = ["sparse", "matrix", "linear-algebra", "csr", "solver"]
+categories = ["mathematics", "science"]
+# CI scripts are not needed to build or use the crate. The docs, including the AI reports,
+#   stay in the package alongside AI-DISCLAIMER.md.
+exclude = [".github/", "check.sh"]
 # Oldest supported Rust, checked by the MSRV job in .github/workflows/rust.yml. Raised by
 #   `<uN>::is_multiple_of` (1.87).
 rust-version = "1.87"

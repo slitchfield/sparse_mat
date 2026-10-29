@@ -30,6 +30,15 @@ fn parse_error(line: usize, message: impl Into<String>) -> SparseError {
     }
 }
 
+/// The numeric token for the negation of `token`: toggles a leading `-`, and turns a leading
+/// `+` into `-`.
+fn negate_token(token: &str) -> String {
+    match token.strip_prefix('-') {
+        Some(magnitude) => magnitude.to_string(),
+        None => format!("-{}", token.strip_prefix('+').unwrap_or(token)),
+    }
+}
+
 fn io_error(err: std::io::Error) -> SparseError {
     SparseError::Io {
         message: err.to_string(),
@@ -39,7 +48,11 @@ fn io_error(err: std::io::Error) -> SparseError {
 impl<T: Scalar> SparseMatrix<T> {
     /// Parses a matrix from Matrix Market coordinate text; see the module docs for what is
     /// supported. Entries listed twice are summed. Returns `SparseError::Parse`, naming the
-    /// line, for malformed input.
+    /// line, for malformed input, including a skew-symmetric value whose negation the element
+    /// type can't hold (any nonzero value of an unsigned type, or `i32::MIN`).
+    ///
+    /// For integer element types, duplicate entries whose sum overflows behave like integer
+    /// `+`: a panic in debug builds and wrapping in release builds.
     pub fn from_matrix_market(text: &str) -> Result<SparseMatrix<T>, SparseError> {
         Self::read_matrix_market(text.as_bytes())
     }
@@ -127,7 +140,21 @@ impl<T: Scalar> SparseMatrix<T> {
                 match symmetry {
                     Symmetry::General => {}
                     Symmetry::Symmetric => triplets.push((col, row, value)),
-                    Symmetry::SkewSymmetric => triplets.push((col, row, T::zero() - value)),
+                    Symmetry::SkewSymmetric => {
+                        // Parse the negated token rather than computing 0 - value, which
+                        //   overflows (a panic in debug builds) for unsigned types and for the
+                        //   most negative signed integer. Those values have no mirror entry in
+                        //   the type, so they become a parse error instead.
+                        let token = if has_values { tokens[2] } else { "1" };
+                        let negated =
+                            T::from_str_radix(&negate_token(token), 10).map_err(|_| {
+                                parse_error(
+                                    number,
+                                    format!("value '{token}' has no negation in this element type"),
+                                )
+                            })?;
+                        triplets.push((col, row, negated));
+                    }
                 }
             }
         }

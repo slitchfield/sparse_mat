@@ -3,12 +3,6 @@
 //! See [`sparse_matrix::SparseMatrix`] for the matrix type and [`sparse_error::SparseError`]
 //! for its errors.
 
-/// Adds two integers. A placeholder left over from the crate template, unrelated to
-/// `SparseMatrix`.
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
 /// The `SparseMatrix` type and its iterators.
 pub mod sparse_matrix;
 
@@ -25,3 +19,10 @@ pub mod sparse_error;
 pub use num_complex;
 /// Re-exported for convenience: `SparseMatrix<Complex<f64>>` is a first-class matrix type.
 pub use num_complex::Complex;
+
+/// Runs the README's Rust examples as doctests, so they can't drift from the API. Compiled only
+/// for `cargo test --doc`; the README is not the crate docs, whose relative links to `docs/`
+/// wouldn't resolve in rustdoc.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

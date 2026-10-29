@@ -26,3 +26,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Build and test only: lints and formatting are checked on stable by the Check job
       - run: cargo test --workspace --all-targets --all-features
+
+  dependencies:
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # RustSec advisories, licenses, banned crates and sources, configured in deny.toml.
+      #   Advisories can appear without any change here, so this job can start failing on
+      #   an unchanged branch; that is the point of running it.
+      - uses: EmbarkStudios/cargo-deny-action@v2

@@ -1,0 +1,28 @@
+# Configuration for cargo-deny (https://embarkstudios.github.io/cargo-deny/), run in CI by the
+#   Dependencies job in .github/workflows/rust.yml. Locally: cargo deny --all-features check
+
+[graph]
+# Check the optional dependencies too, not just the default feature set
+all-features = true
+
+[advisories]
+# Fail on any RustSec advisory (vulnerability, unmaintained, unsound or yanked crate) that
+#   affects the dependency tree. An accepted advisory goes in `ignore` with a reason.
+ignore = []
+
+[licenses]
+# Permissive licenses compatible with this crate's MIT OR Apache-2.0. AI-DISCLAIMER.md also
+#   lists Unlicense, which only memchr (a dev-dependency, via serde_json) offers, as
+#   "Unlicense OR MIT"; MIT satisfies it, and cargo-deny warns about unused allowances.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions only warn: they cost build time, but aren't a correctness or license issue
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+# Only crates.io; no git or alternative-registry dependencies
+unknown-registry = "deny"
+unknown-git = "deny"

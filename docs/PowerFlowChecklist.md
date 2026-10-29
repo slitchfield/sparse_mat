@@ -146,13 +146,21 @@ Merged in PR #2.
 
 ## Housekeeping (carried over from the PR #1 review)
 
-- [ ] Fuzz the Matrix Market parser with truncated, malformed and oversized input, and confirm
-      it always errors instead of panicking.
-- [ ] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
+- [x] Fuzz the Matrix Market parser with truncated, malformed and oversized input, and confirm
+      it always errors instead of panicking. Done as deterministic tests
+      (`tests/matrix_market_fuzz_test.rs`); fixed a skew-symmetric negation overflow.
+- [x] **Decide:** integer overflow when summing duplicate entries (`from_triplets`, and so the
+      Matrix Market reader) panics in debug builds. Keep integer `+` semantics (documented), or
+      add a checked-add bound so it can return an error. Decided: keep integer `+` semantics.
+- [x] Run `cargo audit` or `cargo deny` over the dependency tree, and consider adding it to CI.
+      `cargo deny` (advisories, licenses, bans, sources) is configured in `deny.toml` and runs
+      in a CI job.
 - [x] License: dual MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`, and `license` in
       `Cargo.toml`).
-- [ ] Add the remaining package metadata (`description`, `repository`) and check
+- [x] Add the remaining package metadata (`description`, `repository`) and check
       `cargo package --list`, which currently warns that they are missing.
-- [ ] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
-- [ ] Decide whether to doctest the README by including it as crate docs
-      (`#![doc = include_str!("../README.md")]`), so its example can't drift.
+- [x] Remove the leftover `add(left, right)` template function from `src/lib.rs`.
+- [x] Decide whether to doctest the README by including it as crate docs
+      (`#![doc = include_str!("../README.md")]`), so its example can't drift. Decided: doctest
+      it through a `#[cfg(doctest)]` item in `lib.rs` instead, which keeps the crate docs
+      separate from the README.
