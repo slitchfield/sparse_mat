@@ -8,4 +8,10 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --  -D warnings -W clippy::all
 cargo test --workspace --all-targets
 cargo test --workspace --all-targets --all-features
+# Each optional feature on its own, to catch code that only builds or lints cleanly when
+#   another feature is also enabled. Keep this list in sync with [features] in Cargo.toml.
+for feature in serde rayon; do
+    cargo clippy --workspace --all-targets --features "$feature" -- -D warnings -W clippy::all
+    cargo test --workspace --all-targets --features "$feature"
+done
 cargo test --workspace --doc
