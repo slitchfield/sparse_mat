@@ -72,10 +72,17 @@ Merged in PR #2.
       fetched `testdata/`, skips when they're missing unless `YBUS_REQUIRE_CASES=1`, and fails
       on a broken installation. CI fetches MATPOWER with a cache keyed on the fetch script
       (version and checksum) and requires the cases.
-- [ ] Case model: buses (type, demand, shunts, voltage limits), branches (r, x, b, tap, shift,
-      status) and generators, in per unit.
-- [ ] MATPOWER case reader for the `mpc.bus`, `mpc.branch`, `mpc.gen` and `mpc.baseMVA` matrices
-      in `.m` files.
+- [x] Case model: buses (type, demand, shunts, voltage limits), branches (r, x, b, tap, shift,
+      status) and generators, in per unit. Done in `powerflow/src/case.rs`, with generator costs
+      and bus names too. Changed from the plan: the case stores the file's units (MW, MVAr,
+      degrees, with units in the field names) rather than per unit, and the solvers convert, as
+      MATPOWER does, so the case stays a faithful copy of the file. `Case::validate` checks bus
+      labels and references.
+- [x] MATPOWER case reader for the `mpc.bus`, `mpc.branch`, `mpc.gen` and `mpc.baseMVA` matrices
+      in `.m` files. Done in `powerflow/src/case/matpower.rs` (version 2 format, plus `gencost`
+      and `bus_name`). It reads only `mpc.<field> = <literal>;` statements and rejects any other
+      code, because 24 of MATPOWER 8.1's data files rescale their data with code after the
+      literals; ignoring that would load wrong values. 52 of its 84 data files parse.
 - [ ] Bbus assembly with `from_triplets` (summing branch stamps), honoring branch status and
       phase shifters.
 - [ ] DC power flow: drop the slack row and column with `select`, solve B′θ = P with
