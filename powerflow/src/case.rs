@@ -9,8 +9,9 @@
 //! See `caseformat.m` in MATPOWER for the format's definition, and [`Case::parse`] for what
 //! the reader supports.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs::read_to_string;
+use std::fs;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -203,15 +204,33 @@ pub enum GenCost {
 }
 
 impl Case {
-    /// Reads and parses a MATPOWER case file; see [`Case::parse`].
+    /// Reads and parses a MATPOWER case file; see [`Case::from_bytes`] for how its encoding is
+    /// handled and [`Case::parse`] for what's supported.
     ///
     /// Returns `PowerflowError::NoCaseFile` if the file can't be read.
     pub fn from_path(path: impl AsRef<Path>) -> Result<Case, PowerflowError> {
         let path = path.as_ref();
-        let text = read_to_string(path).map_err(|err| PowerflowError::NoCaseFile {
+        let bytes = fs::read(path).map_err(|err| PowerflowError::NoCaseFile {
             bad_path: path.to_path_buf(),
             reason: err.to_string(),
         })?;
+        Case::from_bytes(&bytes)
+    }
+
+    /// Parses the raw bytes of a MATPOWER case file; see [`Case::parse`].
+    ///
+    /// The bytes are decoded as UTF-8, ignoring a leading byte order mark. Bytes that aren't
+    /// valid UTF-8 are decoded as Latin-1 (ISO 8859-1) instead, where every byte is a character:
+    /// MATLAB has long saved files in the system's native encoding, often Windows-1252 or
+    /// Latin-1, and the syntax itself is ASCII either way. Only text in comments and bus names
+    /// can be affected, and a Windows-1252 byte outside Latin-1 becomes the corresponding
+    /// control character rather than an error.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Case, PowerflowError> {
+        let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+        let text = match std::str::from_utf8(bytes) {
+            Ok(text) => Cow::Borrowed(text),
+            Err(_) => Cow::Owned(bytes.iter().map(|&byte| char::from(byte)).collect()),
+        };
         Case::parse(&text)
     }
 

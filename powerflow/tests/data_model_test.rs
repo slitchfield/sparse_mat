@@ -523,3 +523,40 @@ fn optional_version_2_columns_default_like_matpower() {
         .1
         .contains("mpc.gen row has 9 columns, but needs at least 10"));
 }
+
+#[test]
+fn from_bytes_strips_a_utf8_byte_order_mark() {
+    let mut bytes = b"\xEF\xBB\xBF".to_vec();
+    bytes.extend_from_slice(Tiny::default().text().as_bytes());
+    assert_eq!(
+        Case::from_bytes(&bytes).unwrap(),
+        Tiny::default().parse().unwrap()
+    );
+}
+
+#[test]
+fn from_bytes_falls_back_to_latin1() {
+    // A file saved as Latin-1 or Windows-1252, as older MATLAB versions do: "Zürich" with ü
+    //   as the single byte 0xFC, which isn't valid UTF-8
+    let mut bytes = Tiny {
+        extra: "mpc.bus_name = { 'Z",
+        ..Tiny::default()
+    }
+    .text()
+    .into_bytes();
+    bytes.push(0xFC);
+    bytes.extend_from_slice(b"rich'; 'Bern' };\n% caf\xE9 in a comment\n");
+    let case = Case::from_bytes(&bytes).unwrap();
+    assert_eq!(
+        case.busnames.unwrap(),
+        vec!["Zürich".to_string(), "Bern".to_string()]
+    );
+
+    // Valid UTF-8 is read as UTF-8, not reinterpreted
+    let utf8 = Tiny {
+        extra: "mpc.bus_name = { 'Zürich'; 'Bern' };\n",
+        ..Tiny::default()
+    };
+    let case = Case::from_bytes(utf8.text().as_bytes()).unwrap();
+    assert_eq!(case.busnames.unwrap()[0], "Zürich");
+}
