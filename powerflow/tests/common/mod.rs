@@ -18,6 +18,11 @@
 //! Lookup order:
 //! 1. `MATPOWER_DIR`, if set, names an existing MATPOWER installation, as for the fetch script.
 //!    A case missing from it is an error, not a skip, since the directory was chosen on purpose.
+//!    It needs no `.ybus-verified` marker, since the fetch script didn't produce it. Its version
+//!    (from `lib/mpver.m`) is compared with the pinned one, and a mismatch is reported as a
+//!    warning, not an error: the committed reference results come from the pinned release, so
+//!    comparisons may fail, but keeping a supplied installation compatible is the user's
+//!    responsibility.
 //! 2. Otherwise `testdata/matpower/matpower<VERSION>/` from the fetch script, at the version the
 //!    script pins. It only counts once the script's `.ybus-verified` marker shows a complete,
 //!    checksum-verified extraction.
@@ -43,8 +48,12 @@ pub const VERIFIED_MARKER: &str = ".ybus-verified";
 /// The outcome of looking for a case file.
 #[derive(Debug, PartialEq)]
 pub enum Located {
-    /// The case file exists at this path.
-    Found(PathBuf),
+    /// The case file exists at this path. `warning` says why results from it may not match the
+    /// committed reference results, such as a different MATPOWER version.
+    Found {
+        path: PathBuf,
+        warning: Option<String>,
+    },
     /// MATPOWER hasn't been fetched (or not completely). Tests skip, unless cases are required.
     Missing(String),
     /// The installation exists but is wrong. Tests always fail, so a misconfiguration is fixed
@@ -71,26 +80,80 @@ pub fn pinned_version(script: &str) -> Option<String> {
     })
 }
 
-/// The directory the fetch script extracts the pinned release into.
-pub fn fetched_dir(root: &Path) -> PathBuf {
+/// The MATPOWER version `scripts/fetch-matpower.sh` pins, which the reference results were
+/// generated with.
+pub fn pinned_matpower_version(root: &Path) -> String {
     let script = root.join("scripts").join("fetch-matpower.sh");
     let text = fs::read_to_string(&script)
         .unwrap_or_else(|err| panic!("can't read {}: {err}", script.display()));
-    let version = pinned_version(&text)
-        .unwrap_or_else(|| panic!("no VERSION=\"...\" line in {}", script.display()));
+    pinned_version(&text)
+        .unwrap_or_else(|| panic!("no VERSION=\"...\" line in {}", script.display()))
+}
+
+/// The directory the fetch script extracts release `version` into.
+pub fn fetched_dir(root: &Path, version: &str) -> PathBuf {
     root.join("testdata")
         .join("matpower")
         .join(format!("matpower{version}"))
 }
 
+/// The version recorded in a MATPOWER installation's `lib/mpver.m`, which holds it as
+/// `'Version',  '8.1', ...` inside a struct literal. Comment lines are skipped.
+pub fn installed_version(mpver: &str) -> Option<String> {
+    mpver
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('%'))
+        .find_map(|line| {
+            let after_key = line.split_once("'Version'")?.1;
+            let value = after_key.split_once('\'')?.1;
+            value
+                .split_once('\'')
+                .map(|(version, _)| version.to_string())
+        })
+}
+
+/// A warning if the MATPOWER installation at `dir` is not version `pinned`, or if its version
+/// can't be determined.
+fn version_warning(dir: &Path, pinned: &str) -> Option<String> {
+    let mpver = dir.join("lib").join("mpver.m");
+    let advice = format!(
+        "the reference results were generated with MATPOWER {pinned}, so tests comparing against \
+         them may fail. Keeping a {MATPOWER_DIR_VAR} installation compatible is your \
+         responsibility; unset {MATPOWER_DIR_VAR} to use the pinned download from \
+         scripts/fetch-matpower.sh"
+    );
+    match fs::read_to_string(&mpver)
+        .ok()
+        .as_deref()
+        .and_then(installed_version)
+    {
+        Some(version) if version == pinned => None,
+        Some(version) => Some(format!(
+            "{MATPOWER_DIR_VAR}={} is MATPOWER {version}, but {advice}",
+            dir.display()
+        )),
+        None => Some(format!(
+            "can't determine the MATPOWER version of {MATPOWER_DIR_VAR}={} (no readable version \
+             in {}); {advice}",
+            dir.display(),
+            mpver.display()
+        )),
+    }
+}
+
 /// Looks for `data/<case>.m`, in `env_dir` if given (the value of `MATPOWER_DIR`) and
-/// otherwise in `fetched_dir`. Reads no environment variables, so it can be tested directly.
-pub fn locate(case: &str, env_dir: Option<&Path>, fetched_dir: &Path) -> Located {
+/// otherwise in `fetched_dir`, the download of release `pinned`. A case found in `env_dir`
+/// carries a warning if that installation isn't release `pinned`. Reads no environment
+/// variables, so it can be tested directly.
+pub fn locate(case: &str, env_dir: Option<&Path>, fetched_dir: &Path, pinned: &str) -> Located {
     let file = format!("{case}.m");
     if let Some(dir) = env_dir {
         let path = dir.join("data").join(&file);
         return if path.is_file() {
-            Located::Found(path)
+            Located::Found {
+                path,
+                warning: version_warning(dir, pinned),
+            }
         } else {
             Located::Broken(format!(
                 "{MATPOWER_DIR_VAR}={} has no data/{file}; is it a MATPOWER directory?",
@@ -108,7 +171,11 @@ pub fn locate(case: &str, env_dir: Option<&Path>, fetched_dir: &Path) -> Located
     }
     let path = fetched_dir.join("data").join(&file);
     if path.is_file() {
-        Located::Found(path)
+        // The fetch script downloaded exactly the pinned release, so no version check
+        Located::Found {
+            path,
+            warning: None,
+        }
     } else {
         Located::Broken(format!(
             "the verified MATPOWER download at {} has no data/{file}",
@@ -127,10 +194,16 @@ pub fn parse_require(value: Option<&str>) -> bool {
     }
 }
 
-/// Turns a lookup into the path to use, `None` to skip, or a panic.
+/// Turns a lookup into the path to use, `None` to skip, or a panic. A warning goes to stderr,
+/// which the test harness shows only for failing tests: where a version mismatch matters.
 pub fn resolve(located: Located, require: bool) -> Option<PathBuf> {
     match located {
-        Located::Found(path) => Some(path),
+        Located::Found { path, warning } => {
+            if let Some(warning) = warning {
+                eprintln!("warning: {warning}");
+            }
+            Some(path)
+        }
         Located::Missing(reason) if require => {
             panic!("{reason} ({REQUIRE_VAR}=1, so missing cases are an error)")
         }
@@ -144,14 +217,22 @@ pub fn resolve(located: Located, require: bool) -> Option<PathBuf> {
 
 /// The path of MATPOWER's `data/<case>.m`, or `None` (after reporting why on stderr) when
 /// MATPOWER hasn't been fetched and cases aren't required. Panics if cases are required but
-/// missing, or if the installation is broken.
+/// missing, or if the installation is broken. A `MATPOWER_DIR` installation of a different
+/// version than the pinned one is used, with a warning on stderr.
 pub fn matpower_case(case: &str) -> Option<PathBuf> {
     let env_dir = env::var_os(MATPOWER_DIR_VAR)
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from);
     let require = parse_require(env::var(REQUIRE_VAR).ok().as_deref());
+    let root = workspace_root();
+    let pinned = pinned_matpower_version(&root);
     resolve(
-        locate(case, env_dir.as_deref(), &fetched_dir(&workspace_root())),
+        locate(
+            case,
+            env_dir.as_deref(),
+            &fetched_dir(&root, &pinned),
+            &pinned,
+        ),
         require,
     )
 }
