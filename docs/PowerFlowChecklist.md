@@ -102,8 +102,13 @@ Merged in PR #2.
       - **Clearer errors:** version 1 files are reported as such. NaN in a read column, and a
         case with no buses, are errors.
       - **No regressions:** the same 52 MATPOWER files parse directly as before.
-- [ ] Bbus assembly with `from_triplets` (summing branch stamps), honoring branch status and
-      phase shifters.
+- [x] Bbus assembly with `from_triplets` (summing branch stamps), honoring branch status and
+      phase shifters. `powerflow::dc::DcModel::new`, following MATPOWER's `ext2int`,
+      `bustypes` and `makeBdc`. Fields are private, with accessors (decided). Beyond the plan:
+      a case may have several reference buses, as in `bustypes`; and an island that can't
+      reach a reference bus is found by a breadth-first search and reported by bus
+      (`IslandWithoutReference`), rather than left to a singular factorization, which rounding
+      can hide. Zero reactance is an error (`ZeroReactance`), where MATPOWER gives `Inf`.
 - [ ] DC power flow: drop the slack row and column with `select`, solve B′θ = P with
       `cholesky`, then compute branch flows.
 - [ ] Reference results: MATPOWER `rundcpf` outputs for case14, case30 and case118 checked into
