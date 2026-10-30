@@ -516,14 +516,20 @@ fn require_columns(row: &Row, table: &str, min: usize) -> Result<(), PowerflowEr
 }
 
 /// Converts a value that must be a whole number of at least `min`, such as a bus label.
+///
+/// The largest accepted value is 2^53 (or `usize::MAX` if smaller): past it an `f64` can't
+/// represent every whole number, so the value read may not be the one the file wrote, and a
+/// cast to `usize` would saturate rather than fail.
 fn whole(row: &Row, column: usize, what: &str, min: usize) -> Result<usize, PowerflowError> {
+    const MAX_EXACT: f64 = 9_007_199_254_740_992.0; // 2^53
+    let max = MAX_EXACT.min(usize::MAX as f64);
     let value = row.values[column];
-    if value.is_finite() && value.fract() == 0.0 && value >= min as f64 {
+    if value.is_finite() && value.fract() == 0.0 && value >= min as f64 && value <= max {
         Ok(value as usize)
     } else {
         Err(parse_error(
             row.line,
-            format!("{what} must be a whole number of at least {min}, not {value}"),
+            format!("{what} must be a whole number from {min} to {max}, not {value}"),
         ))
     }
 }
@@ -609,29 +615,46 @@ fn gencost_from_row(row: &Row) -> Result<GenCost, PowerflowError> {
     let v = &row.values;
     let n = whole(row, 3, "gencost N", 1)?;
     let (startup, shutdown) = (v[1], v[2]);
-    match v[0] {
-        2.0 => {
-            require_columns(row, "gencost", 4 + n)?;
-            Ok(GenCost::Polynomial {
-                startup,
-                shutdown,
-                coeffs: v[4..4 + n].to_vec(),
-            })
+    // Values after the first four: N coefficients, or N (p, cost) pairs. Checked, since N
+    //   comes from the file and 4 + 2N could otherwise overflow
+    let values_per_point = match v[0] {
+        2.0 => 1,
+        1.0 => 2,
+        model => {
+            return Err(parse_error(
+                row.line,
+                format!("gencost model {model} is not 1 (piecewise linear) or 2 (polynomial)"),
+            ))
         }
-        1.0 => {
-            require_columns(row, "gencost", 4 + 2 * n)?;
-            Ok(GenCost::PiecewiseLinear {
-                startup,
-                shutdown,
-                points: v[4..4 + 2 * n]
-                    .chunks_exact(2)
-                    .map(|pair| (pair[0], pair[1]))
-                    .collect(),
-            })
+    };
+    let end = n
+        .checked_mul(values_per_point)
+        .and_then(|count| count.checked_add(4))
+        .filter(|&end| end <= v.len())
+        .ok_or_else(|| {
+            parse_error(
+                row.line,
+                format!(
+                    "gencost N is {n}, but the row has only {} values after the first four",
+                    v.len() - 4
+                ),
+            )
+        })?;
+    let values = &v[4..end];
+    Ok(if values_per_point == 1 {
+        GenCost::Polynomial {
+            startup,
+            shutdown,
+            coeffs: values.to_vec(),
         }
-        model => Err(parse_error(
-            row.line,
-            format!("gencost model {model} is not 1 (piecewise linear) or 2 (polynomial)"),
-        )),
-    }
+    } else {
+        GenCost::PiecewiseLinear {
+            startup,
+            shutdown,
+            points: values
+                .chunks_exact(2)
+                .map(|pair| (pair[0], pair[1]))
+                .collect(),
+        }
+    })
 }

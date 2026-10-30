@@ -560,3 +560,47 @@ fn from_bytes_falls_back_to_latin1() {
     let case = Case::from_bytes(utf8.text().as_bytes()).unwrap();
     assert_eq!(case.busnames.unwrap()[0], "Zürich");
 }
+
+#[test]
+fn oversized_whole_numbers_are_rejected_not_saturated() {
+    // 1e30 is a whole number as an f64, but casting it to usize would silently saturate to
+    //   usize::MAX; past 2^53 an f64 can't even represent every whole number
+    let huge_label = Tiny {
+        bus: "\t1e30\t3\t0\t0\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95;\n",
+        ..Tiny::default()
+    };
+    let (line, message) = parse_message(huge_label.parse());
+    assert_eq!(line, 5);
+    assert!(
+        message.contains("bus number must be a whole number from 1 to"),
+        "{message}"
+    );
+
+    // 2^53 itself is still accepted
+    let largest = Tiny {
+        bus: "\t9007199254740992\t3\t0\t0\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95;\n\
+              \t2\t1\t50\t10\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95;\n",
+        gen: "\t2\t0\t0\t100\t-100\t1\t100\t1\t200\t0;\n",
+        branch: "\t9007199254740992\t2\t0.01\t0.1\t0.02\t0\t0\t0\t0\t0\t1;\n",
+        ..Tiny::default()
+    }
+    .parse()
+    .unwrap();
+    assert_eq!(largest.bus[0].bus_label, 9_007_199_254_740_992);
+}
+
+#[test]
+fn gencost_n_larger_than_its_row_is_an_error() {
+    // An N past the end of the row, including one so large that 4 + 2N would overflow
+    for n in ["3", "4503599627370496", "9007199254740992"] {
+        let text = format!(
+            "{}mpc.gencost = [ 1 0 0 {n} 0 0 ];\n",
+            Tiny::default().text()
+        );
+        let (_, message) = parse_message(Case::parse(&text));
+        assert!(
+            message.contains(&format!("gencost N is {n}, but the row has only 2 values")),
+            "{message}"
+        );
+    }
+}
