@@ -768,6 +768,24 @@ fn optional(values: &[f64], column: usize, default: f64) -> f64 {
     values.get(column).copied().unwrap_or(default)
 }
 
+/// Checks that the first `count` values of a row (the ones the model reads) aren't NaN. No
+/// MATPOWER case uses NaN, and one in, say, a reactance would only surface later as a
+/// confusing solver failure. `Inf` is allowed: limits use it.
+fn reject_nan(row: &Row, table: &str, count: usize) -> Result<(), PowerflowError> {
+    match row
+        .values
+        .iter()
+        .take(count)
+        .position(|value| value.is_nan())
+    {
+        Some(column) => Err(parse_error(
+            row.line,
+            format!("mpc.{table} column {} is NaN", column + 1),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Checks a row has at least `min` columns.
 fn require_columns(row: &Row, table: &str, min: usize) -> Result<(), PowerflowError> {
     if row.values.len() < min {
@@ -804,6 +822,7 @@ fn whole(row: &Row, column: usize, what: &str, min: usize) -> Result<usize, Powe
 
 fn bus_from_row(row: &Row) -> Result<Bus, PowerflowError> {
     require_columns(row, "bus", BUS_COLUMNS)?;
+    reject_nan(row, "bus", BUS_COLUMNS)?;
     let v = &row.values;
     let bus_type = BusType::from_code(v[1]).ok_or(PowerflowError::UnknownBusType {
         line: row.line,
@@ -829,6 +848,8 @@ fn bus_from_row(row: &Row) -> Result<Bus, PowerflowError> {
 
 fn gen_from_row(row: &Row) -> Result<Gen, PowerflowError> {
     require_columns(row, "gen", GEN_COLUMNS)?;
+    // Up to the 21 columns of the version 2 format, the ones read
+    reject_nan(row, "gen", 21)?;
     let v = &row.values;
     Ok(Gen {
         bus_label: whole(row, 0, "generator bus number", 1)?,
@@ -857,6 +878,7 @@ fn gen_from_row(row: &Row) -> Result<Gen, PowerflowError> {
 
 fn branch_from_row(row: &Row) -> Result<Branch, PowerflowError> {
     require_columns(row, "branch", BRANCH_COLUMNS)?;
+    reject_nan(row, "branch", 13)?;
     let v = &row.values;
     Ok(Branch {
         from_label: whole(row, 0, "branch from-bus number", 1)?,
@@ -908,6 +930,7 @@ fn gencost_from_row(row: &Row) -> Result<GenCost, PowerflowError> {
                 ),
             )
         })?;
+    reject_nan(row, "gencost", end)?;
     let values = &v[4..end];
     Ok(if values_per_point == 1 {
         GenCost::Polynomial {

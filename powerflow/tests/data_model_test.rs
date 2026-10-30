@@ -604,3 +604,37 @@ fn gencost_n_larger_than_its_row_is_an_error() {
         );
     }
 }
+
+#[test]
+fn nan_in_a_read_column_is_rejected() {
+    // A NaN reactance would otherwise only surface as a failed solve
+    let case = Tiny {
+        branch: "\t1\t2\t0.01\tNaN\t0.02\t0\t0\t0\t0\t0\t1\t-360\t360;\n",
+        ..Tiny::default()
+    };
+    let (line, message) = parse_message(case.parse());
+    assert_eq!((line, message.as_str()), (12, "mpc.branch column 4 is NaN"));
+
+    let cost = format!(
+        "{}mpc.gencost = [ 2 0 0 2 NaN 0 ];\n",
+        Tiny::default().text()
+    );
+    assert!(parse_message(Case::parse(&cost))
+        .1
+        .contains("mpc.gencost column 5 is NaN"));
+
+    // Inf is legal (limits use it), and NaN in a column the model doesn't read is ignored
+    let ignored = Tiny {
+        bus: "\t1\t3\t0\t0\t0\t0\t1\t1\t0\t135\t1\tInf\t0.95\tNaN;\n\
+              \t2\t1\t50\t10\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95\tNaN;\n",
+        ..Tiny::default()
+    };
+    assert_eq!(ignored.parse().unwrap().bus[0].vmax_pu, f64::INFINITY);
+}
+
+#[test]
+fn a_case_needs_buses() {
+    let empty = "function mpc = empty\nmpc.version = '2';\nmpc.baseMVA = 100;\n\
+                 mpc.bus = [];\nmpc.gen = [];\nmpc.branch = [];\n";
+    assert_eq!(Case::parse(empty), Err(PowerflowError::NoBuses));
+}

@@ -250,12 +250,15 @@ impl Case {
         Ok(case)
     }
 
-    /// Checks that the case is internally consistent: a positive, finite `base_mva`, unique
-    /// bus labels, generators and branches that refer to existing buses, and bus names and
-    /// generator costs that match the bus and generator counts.
+    /// Checks that the case is internally consistent: at least one bus, a positive, finite
+    /// `base_mva`, unique bus labels, generators and branches that refer to existing buses, and
+    /// bus names and generator costs that match the bus and generator counts.
     ///
     /// [`Case::parse`] runs this; call it again after editing a case.
     pub fn validate(&self) -> Result<(), PowerflowError> {
+        if self.bus.is_empty() {
+            return Err(PowerflowError::NoBuses);
+        }
         if !(self.base_mva.is_finite() && self.base_mva > 0.0) {
             return Err(PowerflowError::InvalidBaseMva {
                 base_mva: self.base_mva,

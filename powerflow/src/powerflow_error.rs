@@ -61,6 +61,8 @@ pub enum PowerflowError {
         /// The label referred to.
         label: usize,
     },
+    /// The case has no buses.
+    NoBuses,
     /// An optional table's length doesn't match the table it describes.
     CountMismatch {
         /// The field's name in the file (`bus_name` or `gencost`).
@@ -107,6 +109,7 @@ impl fmt::Display for PowerflowError {
                     "{table} row {row} refers to bus {label}, which doesn't exist"
                 )
             }
+            PowerflowError::NoBuses => write!(f, "case has no buses"),
             PowerflowError::CountMismatch {
                 field,
                 expected,
