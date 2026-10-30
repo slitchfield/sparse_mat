@@ -109,8 +109,15 @@ Merged in PR #2.
       reach a reference bus is found by a breadth-first search and reported by bus
       (`IslandWithoutReference`), rather than left to a singular factorization, which rounding
       can hide. Zero reactance is an error (`ZeroReactance`), where MATPOWER gives `Inf`.
-- [ ] DC power flow: drop the slack row and column with `select`, solve B′θ = P with
-      `cholesky`, then compute branch flows.
+- [x] DC power flow: drop the slack row and column with `select`, solve B′θ = P with
+      `cholesky`, then compute branch flows. `DcModel::solve` and `dc_power_flow`, following
+      `runpf` and `dcpf`; results indexed in case-table order (decided). Out-of-service and
+      disconnected generators and branches report 0.0, as `runpf.m` (lines 474–480) does,
+      confirmed with `rundcpf`; isolated buses keep their angle and their load is not served.
+      Cholesky falls back to LU when B′ isn't positive definite (negative reactances), which
+      14 of MATPOWER's cases need. **Found:** without a fill-reducing ordering the solve is
+      slow on large cases (case8387pegase 36 s, case13659pegase 166 s in release), which
+      Phase 3's orderings address.
 - [ ] Reference results: MATPOWER `rundcpf` outputs for case14, case30 and case118 checked into
       test data. Tests compare angles and flows within a stated tolerance. The results are
       generated and committed (`powerflow/tests/data/matpower-reference/`, by

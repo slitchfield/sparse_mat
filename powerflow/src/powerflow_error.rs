@@ -86,6 +86,22 @@ pub enum PowerflowError {
         /// The label of the first such bus, in case order.
         bus_label: usize,
     },
+    /// The DC system is singular although every bus reaches a reference bus, which takes
+    /// branch reactances that cancel out (for example a series capacitor in parallel with an
+    /// equal and opposite line).
+    SingularNetwork {
+        /// The label of the bus whose angle couldn't be determined: the elimination step that
+        /// failed, or the first angle that came out non-finite or over 10⁵ radians.
+        bus_label: usize,
+    },
+    /// A DC model was asked to solve a case whose tables don't match the case it was built
+    /// from.
+    CaseMismatch {
+        /// The model's case's table lengths: buses, generators, branches.
+        expected: (usize, usize, usize),
+        /// The given case's table lengths.
+        found: (usize, usize, usize),
+    },
 }
 
 impl fmt::Display for PowerflowError {
@@ -139,6 +155,15 @@ impl fmt::Display for PowerflowError {
             PowerflowError::IslandWithoutReference { bus_label } => write!(
                 f,
                 "bus {bus_label} is in an island with no reference bus, so its angle is undefined"
+            ),
+            PowerflowError::SingularNetwork { bus_label } => write!(
+                f,
+                "the DC system is singular: the angle at bus {bus_label} can't be determined"
+            ),
+            PowerflowError::CaseMismatch { expected, found } => write!(
+                f,
+                "the DC model was built for a case with (buses, generators, branches) = \
+                 {expected:?}, not {found:?}"
             ),
         }
     }

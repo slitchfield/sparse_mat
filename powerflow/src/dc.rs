@@ -6,15 +6,21 @@
 //! solve gives the angles.
 //!
 //! [`DcModel::new`] builds the matrices once, following MATPOWER's `ext2int`, `bustypes` and
-//! `makeBdc`.
+//! `makeBdc`; [`DcModel::solve`] computes the injections and solves, following `runpf` and
+//! `dcpf`. [`dc_power_flow`] does both. Results are indexed like the case's own tables, so
+//! callers never see the internal numbering.
 //!
-//! Elements are dropped from the model as MATPOWER's `ext2int` drops them: isolated buses
-//! (type 4), out-of-service generators and branches, and generators and branches connected to
-//! an isolated bus.
+//! Elements are dropped from the solve as MATPOWER's `ext2int` drops them:
+//! - **isolated buses** (type 4), whose load is then not served, and whose angle is reported
+//!   unchanged from the case
+//! - **out-of-service generators and branches**, and those connected to an isolated bus. Their
+//!   results are reported as 0.0, as `runpf` reports them (lines 474–480 of MATPOWER 8.1's
+//!   `runpf.m`).
 
 use std::collections::{HashMap, VecDeque};
 use std::f64::consts::PI;
 
+use sparse_mat::sparse_error::SparseError;
 use sparse_mat::sparse_matrix::SparseMatrix;
 
 use crate::case::{BusType, Case};
@@ -35,9 +41,13 @@ pub struct DcModel {
     bus_rows: Vec<usize>,
     branch_rows: Vec<usize>,
     gen_rows: Vec<usize>,
+    /// The internal bus of each in-service generator, parallel to `gen_rows`
+    gen_buses: Vec<usize>,
     ref_buses: Vec<usize>,
     pv_buses: Vec<usize>,
     pq_buses: Vec<usize>,
+    /// The table lengths of the case the model was built from: buses, generators, branches
+    case_shape: (usize, usize, usize),
 }
 
 impl DcModel {
@@ -171,9 +181,11 @@ impl DcModel {
             bus_rows,
             branch_rows,
             gen_rows,
+            gen_buses,
             ref_buses,
             pv_buses,
             pq_buses,
+            case_shape: (case.bus.len(), case.generator.len(), case.branch.len()),
         })
     }
 
@@ -233,4 +245,180 @@ impl DcModel {
     pub fn pq_buses(&self) -> &[usize] {
         &self.pq_buses
     }
+}
+
+/// The result of a DC power flow, indexed like the case's tables.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DcSolution {
+    /// Each bus's voltage angle (degrees), one per case bus row. An isolated bus keeps its
+    /// angle from the case.
+    pub va_deg: Vec<f64>,
+    /// Each branch's real power flow at the from end (MW), one per case branch row. The flow at
+    /// the to end is its negation, since DC power flow is lossless. 0.0 for a branch that's out
+    /// of service or touches an isolated bus.
+    pub pf_mw: Vec<f64>,
+    /// Each generator's real power output (MW), one per case generator row. The first
+    /// generator at each reference bus also picks up that bus's mismatch (the slack). 0.0 for a
+    /// generator that's out of service or at an isolated bus.
+    pub pg_mw: Vec<f64>,
+    /// Which factorization solved the system.
+    pub solver: DcSolver,
+}
+
+/// The factorization a DC power flow used for B′ (Bbus without the reference rows and
+/// columns).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DcSolver {
+    /// Cholesky, which applies when B′ is symmetric positive definite: always, unless some
+    /// branch has a negative reactance (a series capacitor).
+    Cholesky,
+    /// LU with partial pivoting, the fallback when Cholesky finds B′ isn't positive definite.
+    /// (It's also the fallback if B′ isn't exactly symmetric, which the model's construction
+    /// rules out.)
+    Lu,
+    /// No solve was needed: every connected bus is a reference bus.
+    None,
+}
+
+impl DcModel {
+    /// Solves the DC power flow for `case`'s injections, as MATPOWER's `runpf` and `dcpf` do.
+    ///
+    /// `case` must be the case the model was built from, or a copy of it with different
+    /// injections or reference angles: `pd_mw`, `gs_mw`, `pg_mw` and `va_deg` are read from
+    /// `case`, and everything else from the model. Changing anything else, such as a status or
+    /// a reactance, needs a new model.
+    ///
+    /// The net injection at each connected bus is `(Pg − Pd − Gs) / baseMVA − pbusinj`, with
+    /// `Pg` summed over its in-service generators. Reference bus angles are fixed at their
+    /// `va_deg`, and the remaining angles solve `B′ θ = P′`. Branch flows are
+    /// `(Bf θ + pfinj) · baseMVA`.
+    ///
+    /// Returns `PowerflowError::CaseMismatch` if `case`'s tables have different lengths from
+    /// the model's case, and `SingularNetwork` if B′ is singular even though every bus reaches
+    /// a reference, which takes reactances that cancel out.
+    pub fn solve(&self, case: &Case) -> Result<DcSolution, PowerflowError> {
+        let found = (case.bus.len(), case.generator.len(), case.branch.len());
+        if found != self.case_shape {
+            return Err(PowerflowError::CaseMismatch {
+                expected: self.case_shape,
+                found,
+            });
+        }
+        let base_mva = self.base_mva;
+        let to_radians = PI / 180.0;
+
+        // makeSbus's real part, less the phase-shifter injections and shunt conductance
+        let mut pbus: Vec<f64> = self
+            .bus_rows
+            .iter()
+            .zip(&self.pbusinj_pu)
+            .map(|(&row, pbusinj)| {
+                let bus = &case.bus[row];
+                -(bus.pd_mw + bus.gs_mw) / base_mva - pbusinj
+            })
+            .collect();
+        for (&row, &bus) in self.gen_rows.iter().zip(&self.gen_buses) {
+            pbus[bus] += case.generator[row].pg_mw / base_mva;
+        }
+        let mut theta: Vec<f64> = self
+            .bus_rows
+            .iter()
+            .map(|&row| case.bus[row].va_deg * to_radians)
+            .collect();
+
+        // dcpf: θ[pv, pq] = B[pv, pq; pv, pq] \ (P[pv, pq] − B[pv, pq; ref] · θ[ref]), with
+        //   the unknowns in MATPOWER's order
+        let unknown: Vec<usize> = self
+            .pv_buses
+            .iter()
+            .chain(&self.pq_buses)
+            .copied()
+            .collect();
+        let solver = if unknown.is_empty() {
+            DcSolver::None
+        } else {
+            let b_unknown = self
+                .bbus
+                .select(&unknown, &unknown)
+                .expect("indices in range");
+            let b_ref = self
+                .bbus
+                .select(&unknown, &self.ref_buses)
+                .expect("indices in range");
+            let theta_ref: Vec<f64> = self.ref_buses.iter().map(|&bus| theta[bus]).collect();
+            let coupling = b_ref
+                .mul_vec(&theta_ref)
+                .expect("one angle per reference bus");
+            let rhs: Vec<f64> = unknown
+                .iter()
+                .zip(&coupling)
+                .map(|(&bus, coupling)| pbus[bus] - coupling)
+                .collect();
+            let singular = |position: usize| PowerflowError::SingularNetwork {
+                bus_label: case.bus[self.bus_rows[unknown[position]]].bus_label,
+            };
+            // Bbus is built exactly symmetric, but LU is the fallback for NotSymmetric too, in
+            //   case that ever changes: a slower solve beats a panic
+            let (solved, solver) = match b_unknown.solve_spd(&rhs) {
+                Ok(solved) => (solved, DcSolver::Cholesky),
+                Err(SparseError::NotPositiveDefinite { .. } | SparseError::NotSymmetric) => {
+                    match b_unknown.solve(&rhs) {
+                        Ok(solved) => (solved, DcSolver::Lu),
+                        Err(SparseError::SingularMatrix { pivot }) => return Err(singular(pivot)),
+                        Err(err) => unreachable!("LU of a square system: {err}"),
+                    }
+                }
+                Err(err) => unreachable!("Cholesky of a square system: {err}"),
+            };
+            // A nearly singular B′ can factor with a tiny pivot and give huge or non-finite
+            //   angles instead of an error; MATPOWER's dcpf treats |θ| > 1e5 as failure.
+            if let Some(position) = solved.iter().position(|t| !t.is_finite() || t.abs() > 1e5) {
+                return Err(singular(position));
+            }
+            for (&bus, value) in unknown.iter().zip(solved) {
+                theta[bus] = value;
+            }
+            solver
+        };
+
+        let mut va_deg: Vec<f64> = case.bus.iter().map(|bus| bus.va_deg).collect();
+        for (&row, angle) in self.bus_rows.iter().zip(&theta) {
+            va_deg[row] = angle / to_radians;
+        }
+
+        let mut pf_mw = vec![0.0; case.branch.len()];
+        let bf_theta = self.bf.mul_vec(&theta).expect("one angle per bus");
+        for ((&row, flow), pfinj) in self.branch_rows.iter().zip(bf_theta).zip(&self.pfinj_pu) {
+            pf_mw[row] = (flow + pfinj) * base_mva;
+        }
+
+        // The slack: the first in-service generator at each reference bus takes up the
+        //   difference between the bus's solved injection and its scheduled one
+        let mut pg_mw = vec![0.0; case.generator.len()];
+        for &row in &self.gen_rows {
+            pg_mw[row] = case.generator[row].pg_mw;
+        }
+        let injection = self.bbus.mul_vec(&theta).expect("one angle per bus");
+        for &bus in &self.ref_buses {
+            let first = self
+                .gen_buses
+                .iter()
+                .position(|&gen_bus| gen_bus == bus)
+                .expect("a reference bus has an in-service generator");
+            pg_mw[self.gen_rows[first]] += (injection[bus] - pbus[bus]) * base_mva;
+        }
+
+        Ok(DcSolution {
+            va_deg,
+            pf_mw,
+            pg_mw,
+            solver,
+        })
+    }
+}
+
+/// Runs a DC power flow on `case`: [`DcModel::new`] followed by [`DcModel::solve`], with
+/// their errors.
+pub fn dc_power_flow(case: &Case) -> Result<DcSolution, PowerflowError> {
+    DcModel::new(case)?.solve(case)
 }
