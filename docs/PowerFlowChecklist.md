@@ -91,6 +91,17 @@ Merged in PR #2.
       implementation. Tests use `common::normalized_case`, and CI caches the output, installing
       Octave only on a cache miss. Along the way the reader learned to accept version 2 rows
       without the optional columns, filled in as MATPOWER's own conversion does.
+- [x] Case reader hardening for user-written files (`dev/parser-hardening`):
+      - **Encoding:** `Case::from_bytes` (used by `from_path`) ignores a UTF-8 byte order mark
+        and falls back to Latin-1 for files that aren't UTF-8.
+      - **Fuzzing:** deterministic fuzz tests (`matpower_fuzz_test.rs`) found a `gencost` length
+        overflow panic, now fixed. Whole numbers are limited to 2^53 instead of saturating.
+      - **Syntax:** several statements per line, double-quoted strings, `%{ %}`/`#{ #}` block
+        comments and `#` comments, the struct named by the `function` line, and skipping any
+        assignment to a field the model doesn't use (`matpower_syntax_test.rs`).
+      - **Clearer errors:** version 1 files are reported as such. NaN in a read column, and a
+        case with no buses, are errors.
+      - **No regressions:** the same 52 MATPOWER files parse directly as before.
 - [ ] Bbus assembly with `from_triplets` (summing branch stamps), honoring branch status and
       phase shifters.
 - [ ] DC power flow: drop the slack row and column with `select`, solve B′θ = P with

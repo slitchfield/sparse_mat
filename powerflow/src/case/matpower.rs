@@ -1,14 +1,28 @@
 //! Reading MATPOWER case files (version 2 format).
 //!
-//! A case file is MATLAB code that assigns fields of a struct `mpc`. Rather than interpret
-//! MATLAB, this reads the subset that pure data files use and rejects everything else:
+//! A case file is MATLAB code that assigns fields of a struct, `mpc` by convention. Rather than
+//! interpret MATLAB, this reads the subset that data files use and rejects everything else:
 //!
-//! - comments (`%` to the end of the line, outside strings), blank lines, a leading
-//!   `function mpc = name` line, and `end`;
-//! - `mpc.<field> = <literal>;` where the literal is a matrix of plain numbers (`[ … ]`, rows
-//!   ended by `;` or a new line, values separated by spaces, tabs or commas, `...` continuing a
-//!   row onto the next line), a cell array of strings (`{ 'a'; 'b' }`), a string (`'2'`) or
-//!   a number.
+//! - comments: `%` and Octave's `#` to the end of the line (outside strings), and `%{ … %}` or
+//!   `#{ … #}` blocks, whose markers stand alone on their lines and may nest;
+//! - blank lines, `end`, and a leading `function <name> = case` line, whose output names the
+//!   struct (`mpc` when there's no function line);
+//! - statements separated by new lines, `;` or `,`, so several can share a line;
+//! - for the fields the model reads (`version`, `baseMVA`, `bus`, `gen`, `branch`, `gencost`,
+//!   `bus_name`), `<struct>.<field> = <literal>`, where the literal is a matrix of plain numbers
+//!   (`[ … ]`, rows ended by `;` or a new line, values separated by spaces, tabs or commas,
+//!   `...` continuing a row onto the next line), a cell array of strings, a single- or
+//!   double-quoted string, or a number;
+//! - for any other field, including nested ones such as `mpc.if.lims`, an assignment of
+//!   anything at all, which is skipped. MATLAB's value semantics mean such an assignment can't
+//!   change the fields the model reads, so its right-hand side needn't be understood, only its
+//!   brackets and strings balanced to find where it ends.
+//!
+//! Strings follow MATLAB's rule for `'`: it starts a string unless it directly follows a name,
+//! number, closing bracket, `.` or `'`, where it's the transpose operator.
+//!
+//! Version 1 files, which assign `baseMVA`, `bus` and so on as separate variables, are
+//! reported as such. Values the model reads must not be NaN; `Inf` is allowed.
 //!
 //! Some MATPOWER cases rescale their data with code after the literals (for example
 //! `mpc.bus(:, [PD, QD]) = mpc.bus(:, [PD, QD]) / 1e3;`). Ignoring that code would silently

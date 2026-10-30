@@ -236,10 +236,12 @@ impl Case {
 
     /// Parses the text of a MATPOWER case file (version 2 format) and validates it.
     ///
-    /// Only files that state their data as literals are supported: `mpc.<field> = …;`
-    /// assignments of matrices, cell arrays of strings, strings and numbers, plus comments
-    /// and the `function` line. Some MATPOWER cases compute or rescale their data with code
-    /// after the literals; those are rejected rather than read with the wrong values.
+    /// The fields the model reads must be assigned literals: matrices of plain numbers, cell
+    /// arrays of strings, strings and numbers. Assignments to any other field are skipped,
+    /// whatever they hold, and MATLAB and Octave comments, double-quoted strings, several
+    /// statements on a line and a struct named by the `function` line are all accepted. Some
+    /// MATPOWER cases compute or rescale their data with code after the literals; those are
+    /// rejected rather than read with the wrong values.
     ///
     /// Returns `PowerflowError::Parse` (with a line number) for malformed or unsupported
     /// text, `MissingField` or `UnsupportedVersion` for a file that isn't a version 2 case,
