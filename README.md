@@ -28,6 +28,13 @@ API overview, and [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md) for
   - **How tests use it:** `powerflow` tests find cases through `powerflow/tests/common`. They
     skip when MATPOWER hasn't been fetched. Set `YBUS_REQUIRE_CASES=1` to make missing cases
     fail instead; the Check CI job fetches MATPOWER (cached) and sets it.
+  - **Cases that compute their data with code:** some MATPOWER cases rescale their data with
+    MATLAB code, which the `powerflow` reader rejects rather than misread.
+    `scripts/normalize-cases.sh` evaluates every case with MATPOWER's own `loadcase` and writes
+    it out as plain literals, at full precision, into the gitignored `testdata/`. It needs
+    Octave (for example `apt install octave`). Tests find these cases through
+    `common::normalized_case`. The Check CI job installs Octave and normalizes the cases only
+    when its cache of them is out of date.
   - **Regenerating the results:** `scripts/generate-reference.sh` regenerates the committed DC
     power flow reference results in
     [`powerflow/tests/data/matpower-reference/`](powerflow/tests/data/matpower-reference/). It

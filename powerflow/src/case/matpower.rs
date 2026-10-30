@@ -13,7 +13,9 @@
 //! Some MATPOWER cases rescale their data with code after the literals (for example
 //! `mpc.bus(:, [PD, QD]) = mpc.bus(:, [PD, QD]) / 1e3;`). Ignoring that code would silently
 //! give the wrong values, so any statement outside the subset is an error, as are numeric
-//! expressions such as `50/3` inside a matrix.
+//! expressions such as `50/3` inside a matrix. To read such a case, evaluate it with MATPOWER's
+//! `loadcase` and write it out as literals first; in this repository,
+//! `scripts/normalize-cases.sh` does that for every MATPOWER case.
 
 use std::collections::HashMap;
 
