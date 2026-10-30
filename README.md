@@ -23,11 +23,15 @@ API overview, and [`docs/PowerFlowChecklist.md`](docs/PowerFlowChecklist.md) for
 - **Dependencies:** `cargo deny --all-features check` checks advisories, licenses, banned
   crates and sources against `deny.toml`. The Dependencies CI job runs it.
 - **MATPOWER test data:** `scripts/fetch-matpower.sh` downloads a pinned MATPOWER release
-  (checksum verified) into the gitignored `testdata/`; set `MATPOWER_DIR` to use an existing
-  installation instead. `scripts/generate-reference.sh` regenerates the committed DC power flow
-  reference results in
-  [`powerflow/tests/data/matpower-reference/`](powerflow/tests/data/matpower-reference/), and
-  needs Octave.
+  (checksum verified) into the gitignored `testdata/`. It needs `curl` and `unzip`. Set
+  `MATPOWER_DIR` to use an existing installation instead.
+  - **How tests use it:** `powerflow` tests find cases through `powerflow/tests/common`. They
+    skip when MATPOWER hasn't been fetched. Set `YBUS_REQUIRE_CASES=1` to make missing cases
+    fail instead; the Check CI job fetches MATPOWER (cached) and sets it.
+  - **Regenerating the results:** `scripts/generate-reference.sh` regenerates the committed DC
+    power flow reference results in
+    [`powerflow/tests/data/matpower-reference/`](powerflow/tests/data/matpower-reference/). It
+    needs Octave.
 
 ## Documentation
 
