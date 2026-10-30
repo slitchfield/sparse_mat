@@ -30,6 +30,12 @@
 //! When the cases aren't there, tests skip by returning early. Set `YBUS_REQUIRE_CASES=1` to
 //! make a missing case fail instead. CI does this, so a broken fetch can't turn into silently
 //! passing tests.
+//!
+//! [`normalized_case`] finds the same cases as rewritten by `scripts/normalize-cases.sh`, which
+//! evaluates the ones that compute their data with code (with MATPOWER's `loadcase`, under
+//! Octave) and writes every case as plain literals. It follows the same rules, and its output
+//! only counts once complete (`.ybus-normalized`) and made from the MATPOWER installation
+//! currently in use (its `SOURCE` file).
 
 // Each integration test file compiles this module separately and uses only part of it
 #![allow(dead_code)]
@@ -44,6 +50,9 @@ pub const MATPOWER_DIR_VAR: &str = "MATPOWER_DIR";
 pub const REQUIRE_VAR: &str = "YBUS_REQUIRE_CASES";
 /// Written by `scripts/fetch-matpower.sh` after a complete, verified extraction.
 pub const VERIFIED_MARKER: &str = ".ybus-verified";
+
+/// Written by `scripts/normalize-cases.sh` once its output is complete.
+pub const NORMALIZED_MARKER: &str = ".ybus-normalized";
 
 /// The outcome of looking for a case file.
 #[derive(Debug, PartialEq)]
@@ -213,6 +222,81 @@ pub fn resolve(located: Located, require: bool) -> Option<PathBuf> {
         }
         Located::Broken(reason) => panic!("{reason}"),
     }
+}
+
+/// The directory `scripts/normalize-cases.sh` writes the cases normalized from the MATPOWER
+/// installation at `source` into: `testdata/matpower/<source's name>-normalized/`.
+pub fn normalized_dir(root: &Path, source: &Path) -> PathBuf {
+    let name = source
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "matpower".to_string());
+    root.join("testdata")
+        .join("matpower")
+        .join(format!("{name}-normalized"))
+}
+
+/// Looks for the normalized `<case>.m` in `normalized`, which must be complete and made from
+/// the MATPOWER installation at `source`. Reads no environment variables.
+pub fn locate_normalized(case: &str, source: &Path, normalized: &Path) -> Located {
+    if !normalized.join(NORMALIZED_MARKER).is_file() {
+        return Located::Missing(format!(
+            "MATPOWER cases aren't normalized (no complete output at {}); run \
+             scripts/normalize-cases.sh, which needs Octave",
+            normalized.display()
+        ));
+    }
+
+    // The script records the physical path of the MATPOWER directory it read
+    let expected = fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
+    let recorded = fs::read_to_string(normalized.join("SOURCE"))
+        .ok()
+        .and_then(|text| text.lines().next().map(str::to_string));
+    if recorded.as_deref() != Some(format!("source {}", expected.display()).as_str()) {
+        return Located::Missing(format!(
+            "the normalized cases at {} weren't made from {}; rerun scripts/normalize-cases.sh",
+            normalized.display(),
+            expected.display()
+        ));
+    }
+
+    let path = normalized.join(format!("{case}.m"));
+    if path.is_file() {
+        Located::Found {
+            path,
+            warning: None,
+        }
+    } else {
+        Located::Broken(format!(
+            "the normalized cases at {} have no {case}.m; is it a MATPOWER case that loadcase \
+             can load?",
+            normalized.display()
+        ))
+    }
+}
+
+/// The path of the normalized `<case>.m`, written as literals by `scripts/normalize-cases.sh`,
+/// or `None` (after reporting why on stderr) when the cases haven't been normalized and cases
+/// aren't required. Panics if cases are required but missing. Normalized from `MATPOWER_DIR`
+/// when that's set, with the same version warning as [`matpower_case`].
+pub fn normalized_case(case: &str) -> Option<PathBuf> {
+    let env_dir = env::var_os(MATPOWER_DIR_VAR)
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from);
+    let require = parse_require(env::var(REQUIRE_VAR).ok().as_deref());
+    let root = workspace_root();
+    let pinned = pinned_matpower_version(&root);
+    let source = env_dir
+        .clone()
+        .unwrap_or_else(|| fetched_dir(&root, &pinned));
+    let located = match locate_normalized(case, &source, &normalized_dir(&root, &source)) {
+        Located::Found { path, .. } => Located::Found {
+            path,
+            warning: env_dir.and_then(|dir| version_warning(&dir, &pinned)),
+        },
+        other => other,
+    };
+    resolve(located, require)
 }
 
 /// The path of MATPOWER's `data/<case>.m`, or `None` (after reporting why on stderr) when

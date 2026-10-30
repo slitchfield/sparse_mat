@@ -83,6 +83,14 @@ Merged in PR #2.
       and `bus_name`). It reads only `mpc.<field> = <literal>;` statements and rejects any other
       code, because 24 of MATPOWER 8.1's data files rescale their data with code after the
       literals; ignoring that would load wrong values. 52 of its 84 data files parse.
+- [x] Cases that compute their data with code: `scripts/normalize-cases.sh` evaluates every
+      MATPOWER case with MATPOWER's own `loadcase` under Octave and writes it as literals at
+      full precision (`%.17g`; MATPOWER's `savecase` would round to `%.9g`) into the gitignored
+      `testdata/`. All 78 of MATPOWER 8.1's cases then parse; the other 6 data files aren't
+      cases. Chosen over interpreting MATLAB in the reader, which would be a partial language
+      implementation. Tests use `common::normalized_case`, and CI caches the output, installing
+      Octave only on a cache miss. Along the way the reader learned to accept version 2 rows
+      without the optional columns, filled in as MATPOWER's own conversion does.
 - [ ] Bbus assembly with `from_triplets` (summing branch stamps), honoring branch status and
       phase shifters.
 - [ ] DC power flow: drop the slack row and column with `select`, solve B′θ = P with

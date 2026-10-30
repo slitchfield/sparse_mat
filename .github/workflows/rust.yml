@@ -17,9 +17,24 @@ jobs:
       #   fetches afresh. On a cache hit the script finds its .ybus-verified marker and exits.
       - uses: actions/cache@v4
         with:
-          path: testdata/matpower
+          # The normalized cases below have their own cache and key
+          path: |
+            testdata/matpower
+            !testdata/matpower/*-normalized
           key: matpower-${{ hashFiles('scripts/fetch-matpower.sh') }}
       - run: scripts/fetch-matpower.sh
+      # Cases that compute their data with code are evaluated by MATPOWER under Octave and
+      #   written as literals. The key covers the MATPOWER pin and both normalization scripts.
+      #   Octave is only installed on a cache miss; on a hit the script finds its complete,
+      #   same-source output and exits.
+      - id: normalized
+        uses: actions/cache@v4
+        with:
+          path: testdata/matpower/*-normalized
+          key: normalized-${{ hashFiles('scripts/fetch-matpower.sh', 'scripts/normalize-cases.sh', 'scripts/normalize_cases.m') }}
+      - if: steps.normalized.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends octave
+      - run: scripts/normalize-cases.sh
       - run: ./check.sh
         env:
           # Fail, rather than skip, any test whose MATPOWER case is missing
