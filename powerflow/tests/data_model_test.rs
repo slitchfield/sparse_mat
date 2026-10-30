@@ -495,3 +495,31 @@ fn errors_display_readably() {
         "gen row 3 refers to bus 42, which doesn't exist"
     );
 }
+
+#[test]
+fn optional_version_2_columns_default_like_matpower() {
+    // A 10-column generator row and an 11-column branch row, as in some version 2 files
+    //   (case533mt): MATPOWER's own conversion fills generator columns 11-21 with 0 and the
+    //   branch angle limits with -360 and 360
+    let case = Tiny {
+        gen: "\t1\t0\t0\t100\t-100\t1\t100\t1\t200\t0;\n",
+        branch: "\t1\t2\t0.01\t0.1\t0.02\t0\t0\t0\t0\t0\t1;\n",
+        ..Tiny::default()
+    }
+    .parse()
+    .unwrap();
+    let generator = &case.generator[0];
+    assert_eq!((generator.pmax_mw, generator.pmin_mw), (200.0, 0.0));
+    assert_eq!((generator.pc1_mw, generator.apf), (0.0, 0.0));
+    let branch = &case.branch[0];
+    assert_eq!((branch.angmin_deg, branch.angmax_deg), (-360.0, 360.0));
+
+    // Fewer than the columns every version has is still an error
+    let short_gen = Tiny {
+        gen: "\t1\t0\t0\t100\t-100\t1\t100\t1\t200;\n",
+        ..Tiny::default()
+    };
+    assert!(parse_message(short_gen.parse())
+        .1
+        .contains("mpc.gen row has 9 columns, but needs at least 10"));
+}

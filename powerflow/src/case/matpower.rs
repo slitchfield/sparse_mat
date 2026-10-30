@@ -20,11 +20,17 @@ use std::collections::HashMap;
 use super::{Branch, Bus, BusType, Case, Gen, GenCost};
 use crate::powerflow_error::PowerflowError;
 
-/// The minimum columns of each table in the version 2 format. Extra columns, such as the
-/// results MATPOWER appends to solved cases, are ignored.
+/// The columns each table must have. Extra columns, such as the results MATPOWER appends to
+/// solved cases, are ignored.
+///
+/// Generator columns 11-21 and branch columns 12-13 were added in version 2 of the format, and
+/// MATPOWER itself accepts version 2 files without them (case533mt has 18-column generator
+/// rows). Missing ones get the values MATPOWER's own version 1 to 2 conversion (`mpc_1to2` in
+/// `loadcase.m`) fills in: 0 for the generator columns, and -360 and 360 (unconstrained) for
+/// the branch angle limits.
 const BUS_COLUMNS: usize = 13;
-const GEN_COLUMNS: usize = 21;
-const BRANCH_COLUMNS: usize = 13;
+const GEN_COLUMNS: usize = 10;
+const BRANCH_COLUMNS: usize = 11;
 
 /// A matrix row, with the line it starts on for error messages.
 struct Row {
@@ -487,13 +493,18 @@ fn matrix(field: Field, name: &str) -> Result<Vec<Row>, PowerflowError> {
     }
 }
 
+/// Column `column` of a row, or `default` for a row too short to have it.
+fn optional(values: &[f64], column: usize, default: f64) -> f64 {
+    values.get(column).copied().unwrap_or(default)
+}
+
 /// Checks a row has at least `min` columns.
 fn require_columns(row: &Row, table: &str, min: usize) -> Result<(), PowerflowError> {
     if row.values.len() < min {
         Err(parse_error(
             row.line,
             format!(
-                "mpc.{table} row has {} columns, but version 2 needs at least {min}",
+                "mpc.{table} row has {} columns, but needs at least {min}",
                 row.values.len()
             ),
         ))
@@ -554,17 +565,17 @@ fn gen_from_row(row: &Row) -> Result<Gen, PowerflowError> {
         status: v[7] > 0.0,
         pmax_mw: v[8],
         pmin_mw: v[9],
-        pc1_mw: v[10],
-        pc2_mw: v[11],
-        qc1min_mvar: v[12],
-        qc1max_mvar: v[13],
-        qc2min_mvar: v[14],
-        qc2max_mvar: v[15],
-        ramp_agc_mw_per_min: v[16],
-        ramp_10_mw: v[17],
-        ramp_30_mw: v[18],
-        ramp_q_mvar_per_min: v[19],
-        apf: v[20],
+        pc1_mw: optional(v, 10, 0.0),
+        pc2_mw: optional(v, 11, 0.0),
+        qc1min_mvar: optional(v, 12, 0.0),
+        qc1max_mvar: optional(v, 13, 0.0),
+        qc2min_mvar: optional(v, 14, 0.0),
+        qc2max_mvar: optional(v, 15, 0.0),
+        ramp_agc_mw_per_min: optional(v, 16, 0.0),
+        ramp_10_mw: optional(v, 17, 0.0),
+        ramp_30_mw: optional(v, 18, 0.0),
+        ramp_q_mvar_per_min: optional(v, 19, 0.0),
+        apf: optional(v, 20, 0.0),
     })
 }
 
@@ -583,8 +594,8 @@ fn branch_from_row(row: &Row) -> Result<Branch, PowerflowError> {
         tap_ratio: v[8],
         shift_deg: v[9],
         status: v[10] != 0.0,
-        angmin_deg: v[11],
-        angmax_deg: v[12],
+        angmin_deg: optional(v, 11, -360.0),
+        angmax_deg: optional(v, 12, 360.0),
     })
 }
 
