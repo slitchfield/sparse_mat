@@ -43,12 +43,31 @@ const SEEDS: &[&str] = &[
      mpc.gentype = { 'ST' };\n\
      mpc.dcline = [ 1 2 3 ];\n\
      end\n",
+    "function s = seed3\n\
+     %{\n\
+     block comment with mpc.bus(:, 3) = 0; inside\n\
+     %}\n\
+     # Octave comment\n\
+     s.version = \"2\"; s.baseMVA = 100;\n\
+     s.if.lims = [ 1 -100 100 ];\n\
+     s.note = sprintf('made %d', 2026); s.t = [1 2]'; % it's a comment\n\
+     s.bus = [ 1 3 0 0 0 0 1 1 0 135 1 1.05 0.95; 2 1 50 10 0 0 1 1 0 135 1 1.05 0.95 ];\n\
+     s.gen = [ 1 0 0 1 -1 1 100 1 200 0 ];\n\
+     s.branch = [ 1 2 0.01 0.1 0.02 0 0 0 0 0 1 ];\n\
+     s.bus_name = { \"Bus \"\"1\"\"\"; 'two' };\n",
 ];
 
 /// Tokens that tend to break parsers: numbers at and past the limits of `usize` and `f64`,
 /// non-finite and malformed numbers, structural characters of the syntax, and awkward text.
 const TOKENS: &[&str] = &[
     "0",
+    "function s = x",
+    "s.",
+    "#{",
+    "#}",
+    "\"\"",
+    "(",
+    ")",
     "-1",
     "1.5",
     "4294967296",
