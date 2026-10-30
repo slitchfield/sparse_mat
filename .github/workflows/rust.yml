@@ -12,7 +12,18 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # MATPOWER's case files aren't committed, so fetch the pinned release. The cache key
+      #   hashes the fetch script, which holds the version and its SHA-256, so bumping either
+      #   fetches afresh. On a cache hit the script finds its .ybus-verified marker and exits.
+      - uses: actions/cache@v4
+        with:
+          path: testdata/matpower
+          key: matpower-${{ hashFiles('scripts/fetch-matpower.sh') }}
+      - run: scripts/fetch-matpower.sh
       - run: ./check.sh
+        env:
+          # Fail, rather than skip, any test whose MATPOWER case is missing
+          YBUS_REQUIRE_CASES: "1"
 
   msrv:
     name: MSRV
@@ -24,7 +35,9 @@ jobs:
         with:
           toolchain: "1.87"
       - uses: Swatinem/rust-cache@v2
-      # Build and test only: lints and formatting are checked on stable by the Check job
+      # Build and test only: lints and formatting are checked on stable by the Check job.
+      #   MATPOWER isn't fetched here, so tests that need its cases skip; the Check job runs
+      #   them with the cases required.
       - run: cargo test --workspace --all-targets --all-features
 
   dependencies:

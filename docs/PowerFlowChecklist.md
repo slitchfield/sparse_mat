@@ -68,6 +68,10 @@ Merged in PR #2.
       from the public UW test case archive and published papers. Nothing derived from
       case2383wp is committed: its data is distributed with the provider's permission, whose
       scope isn't stated.
+- [x] Test-data locator (`powerflow/tests/common`): finds cases in `MATPOWER_DIR` or the
+      fetched `testdata/`, skips when they're missing unless `YBUS_REQUIRE_CASES=1`, and fails
+      on a broken installation. CI fetches MATPOWER with a cache keyed on the fetch script
+      (version and checksum) and requires the cases.
 - [ ] Case model: buses (type, demand, shunts, voltage limits), branches (r, x, b, tap, shift,
       status) and generators, in per unit.
 - [ ] MATPOWER case reader for the `mpc.bus`, `mpc.branch`, `mpc.gen` and `mpc.baseMVA` matrices
