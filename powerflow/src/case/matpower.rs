@@ -1,14 +1,28 @@
 //! Reading MATPOWER case files (version 2 format).
 //!
-//! A case file is MATLAB code that assigns fields of a struct `mpc`. Rather than interpret
-//! MATLAB, this reads the subset that pure data files use and rejects everything else:
+//! A case file is MATLAB code that assigns fields of a struct, `mpc` by convention. Rather than
+//! interpret MATLAB, this reads the subset that data files use and rejects everything else:
 //!
-//! - comments (`%` to the end of the line, outside strings), blank lines, a leading
-//!   `function mpc = name` line, and `end`;
-//! - `mpc.<field> = <literal>;` where the literal is a matrix of plain numbers (`[ … ]`, rows
-//!   ended by `;` or a new line, values separated by spaces, tabs or commas, `...` continuing a
-//!   row onto the next line), a cell array of strings (`{ 'a'; 'b' }`), a string (`'2'`) or
-//!   a number.
+//! - comments: `%` and Octave's `#` to the end of the line (outside strings), and `%{ … %}` or
+//!   `#{ … #}` blocks, whose markers stand alone on their lines and may nest;
+//! - blank lines, `end`, and a leading `function <name> = case` line, whose output names the
+//!   struct (`mpc` when there's no function line);
+//! - statements separated by new lines, `;` or `,`, so several can share a line;
+//! - for the fields the model reads (`version`, `baseMVA`, `bus`, `gen`, `branch`, `gencost`,
+//!   `bus_name`), `<struct>.<field> = <literal>`, where the literal is a matrix of plain numbers
+//!   (`[ … ]`, rows ended by `;` or a new line, values separated by spaces, tabs or commas,
+//!   `...` continuing a row onto the next line), a cell array of strings, a single- or
+//!   double-quoted string, or a number;
+//! - for any other field, including nested ones such as `mpc.if.lims`, an assignment of
+//!   anything at all, which is skipped. MATLAB's value semantics mean such an assignment can't
+//!   change the fields the model reads, so its right-hand side needn't be understood, only its
+//!   brackets and strings balanced to find where it ends.
+//!
+//! Strings follow MATLAB's rule for `'`: it starts a string unless it directly follows a name,
+//! number, closing bracket, `.` or `'`, where it's the transpose operator.
+//!
+//! Version 1 files, which assign `baseMVA`, `bus` and so on as separate variables, are
+//! reported as such. Values the model reads must not be NaN; `Inf` is allowed.
 //!
 //! Some MATPOWER cases rescale their data with code after the literals (for example
 //! `mpc.bus(:, [PD, QD]) = mpc.bus(:, [PD, QD]) / 1e3;`). Ignoring that code would silently
@@ -78,93 +92,209 @@ pub(super) fn parse(text: &str) -> Result<Case, PowerflowError> {
     build_case(read_fields(text)?)
 }
 
-/// One line with its comment removed, and whether it ends in a `...` continuation.
+/// The fields the case model reads. Their assignments must be literals; any other field's
+/// assignment is skipped, whatever its right-hand side, because MATLAB's value semantics mean
+/// `mpc.other = …` can't change these.
+const USED_FIELDS: &[&str] = &[
+    "version", "baseMVA", "bus", "gen", "branch", "gencost", "bus_name",
+];
+
+/// The variables a version 1 case file assigns, instead of fields of one struct.
+const VERSION_1_VARIABLES: &[&str] = &["baseMVA", "bus", "gen", "branch", "areas", "gencost"];
+
+/// One line with its comments removed, and whether it ends in a `...` continuation.
 struct CodeLine<'a> {
     number: usize,
     code: &'a str,
     continued: bool,
 }
 
-/// Removes a `%` comment and a `...` continuation from `line`, outside single-quoted
-/// strings (where `''` is an escaped quote and keeps the string open).
-fn strip_line(number: usize, line: &str) -> CodeLine<'_> {
-    let bytes = line.as_bytes();
-    let mut in_string = false;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\'' => in_string = !in_string,
-            b'%' if !in_string => {
-                return CodeLine {
-                    number,
-                    code: &line[..i],
-                    continued: false,
-                }
-            }
-            b'.' if !in_string && line[i..].starts_with("...") => {
-                return CodeLine {
-                    number,
-                    code: &line[..i],
-                    continued: true,
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    CodeLine {
-        number,
-        code: line,
-        continued: false,
+/// Whether a `'` at byte `i` of `text` starts a string. MATLAB reads it as the transpose
+/// operator instead when it directly follows a name, a number, a closing bracket, a `.`, or
+/// another `'` (as in `x''`).
+fn quote_starts_string(text: &str, i: usize) -> bool {
+    match text[..i].chars().next_back() {
+        Some(c) => !(c.is_alphanumeric() || matches!(c, '_' | ')' | ']' | '}' | '.' | '\'')),
+        None => true,
     }
 }
 
-/// Reads every `mpc.<field> = <literal>;` assignment, rejecting any other statement.
-fn read_fields(text: &str) -> Result<HashMap<String, Field>, PowerflowError> {
-    let lines: Vec<CodeLine> = text
-        .lines()
-        .enumerate()
-        .map(|(index, line)| strip_line(index + 1, line))
-        .collect();
+/// Finds the first character outside strings in `text` (one line of code) for which `stop`
+/// returns true, and returns its byte index. Single- and double-quoted strings are skipped,
+/// with doubled quotes as escapes, and a `'` that transposes isn't taken for a string. Returns
+/// `Err(start)` for a string that isn't closed on the line, since MATLAB strings can't span
+/// lines.
+fn find_code(text: &str, mut stop: impl FnMut(char) -> bool) -> Result<Option<usize>, usize> {
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        let quote = match c {
+            '\'' if quote_starts_string(text, i) => '\'',
+            '"' => '"',
+            _ if stop(c) => return Ok(Some(i)),
+            _ => continue,
+        };
+        // Skip the string, where a doubled quote is an escaped one
+        loop {
+            match chars.next() {
+                Some((_, q)) if q == quote => {
+                    if chars.peek().is_some_and(|&(_, next)| next == quote) {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                Some(_) => {}
+                None => return Err(i),
+            }
+        }
+    }
+    Ok(None)
+}
 
+/// Removes a `%` or `#` comment and a `...` continuation (and the rest of its line) from
+/// `line`, outside strings. A line with an unclosed string is kept whole, for the parser to
+/// report.
+fn strip_line(number: usize, line: &str) -> CodeLine<'_> {
+    let mut previous_dot_run = 0;
+    let found = find_code(line, |c| {
+        if c == '.' {
+            previous_dot_run += 1;
+        } else {
+            previous_dot_run = 0;
+        }
+        matches!(c, '%' | '#') || previous_dot_run == 3
+    });
+    match found {
+        Ok(Some(i)) if line[i..].starts_with('.') => CodeLine {
+            number,
+            // The index is the third dot of `...`
+            code: &line[..i - 2],
+            continued: true,
+        },
+        Ok(Some(i)) => CodeLine {
+            number,
+            code: &line[..i],
+            continued: false,
+        },
+        Ok(None) | Err(_) => CodeLine {
+            number,
+            code: line,
+            continued: false,
+        },
+    }
+}
+
+/// Splits text into code lines, removing line comments and `%{ … %}` (or Octave's
+/// `#{ … #}`) block comments, whose markers must be alone on their lines and may nest.
+fn code_lines(text: &str) -> Vec<CodeLine<'_>> {
+    let mut depth = 0usize;
+    text.lines()
+        .enumerate()
+        .map(|(index, line)| {
+            let number = index + 1;
+            let marker = line.trim();
+            let blank = CodeLine {
+                number,
+                code: "",
+                continued: false,
+            };
+            if marker == "%{" || marker == "#{" {
+                depth += 1;
+                blank
+            } else if depth > 0 {
+                if marker == "%}" || marker == "#}" {
+                    depth -= 1;
+                }
+                blank
+            } else {
+                strip_line(number, line)
+            }
+        })
+        .collect()
+}
+
+/// A position in the code: a line index and a byte offset into that line's code.
+#[derive(Clone, Copy)]
+struct Cursor {
+    index: usize,
+    pos: usize,
+}
+
+/// Reads every assignment, returning the literals assigned to the fields the model uses.
+/// Assignments to other fields are skipped; any other statement is an error.
+fn read_fields(text: &str) -> Result<HashMap<String, Field>, PowerflowError> {
+    let lines = code_lines(text);
     let mut fields: HashMap<String, Field> = HashMap::new();
+    // The struct's name: the function's output, or `mpc` in a file without a function line
+    let mut variable = "mpc".to_string();
     let mut seen_statement = false;
-    let mut index = 0;
-    while index < lines.len() {
-        let line = &lines[index];
-        let statement = line.code.trim();
-        index += 1;
+    let mut cursor = Cursor { index: 0, pos: 0 };
+
+    while cursor.index < lines.len() {
+        let line = &lines[cursor.index];
+        let rest = &line.code[cursor.pos..];
+        let statement = rest.trim_start();
         if statement.is_empty() {
+            cursor = Cursor {
+                index: cursor.index + 1,
+                pos: 0,
+            };
+            continue;
+        }
+        let start = cursor.pos + (rest.len() - statement.len());
+        // Empty statements between separators
+        if statement.starts_with([';', ',']) {
+            cursor.pos = start + 1;
             continue;
         }
 
-        if statement.starts_with("function ") && !seen_statement {
+        let first_word = leading_identifier(statement);
+        if first_word == "function" && !seen_statement {
+            variable = function_output(line.number, statement)?;
             seen_statement = true;
+            cursor = Cursor {
+                index: cursor.index + 1,
+                pos: 0,
+            };
             continue;
         }
         seen_statement = true;
-        if matches!(
-            statement.trim_end_matches(';').trim(),
-            "end" | "endfunction"
-        ) {
-            continue;
+        if matches!(first_word, "end" | "endfunction") {
+            let after = statement[first_word.len()..].trim_start();
+            if after.is_empty() || after.starts_with([';', ',']) {
+                cursor.pos = start + first_word.len();
+                continue;
+            }
         }
 
-        let Some(assignment) = statement.strip_prefix("mpc.") else {
+        let Some((path, rhs_offset)) = assignment_target(statement, &variable) else {
+            if VERSION_1_VARIABLES.contains(&first_word)
+                && assignment_target(statement, first_word).is_none()
+                && is_plain_assignment(&statement[first_word.len()..])
+            {
+                return Err(PowerflowError::UnsupportedVersion {
+                    found: "1".to_string(),
+                });
+            }
             return Err(unsupported_statement(line.number, statement));
         };
-        let name_len = assignment
-            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .unwrap_or(assignment.len());
-        let (name, rest) = assignment.split_at(name_len);
-        let Some(rhs) = rest.trim_start().strip_prefix('=') else {
-            // Such as an indexed assignment, `mpc.bus(:, PD) = …`
-            return Err(unsupported_statement(line.number, statement));
+        let rhs = Cursor {
+            index: cursor.index,
+            pos: start + rhs_offset,
         };
-        let rhs = rhs.trim_start();
 
-        let (value, next_index) = read_literal(&lines, index - 1, rhs)?;
-        index = next_index;
+        let name = path[0];
+        if !USED_FIELDS.contains(&name) {
+            cursor = skip_expression(&lines, rhs)?;
+            continue;
+        }
+        if path.len() > 1 {
+            // Such as `mpc.bus.x = …`, which isn't valid for a matrix anyway
+            return Err(unsupported_statement(line.number, statement));
+        }
+
+        let (value, after) = read_literal(&lines, rhs)?;
+        cursor = expect_statement_end(&lines, after)?;
         if let Some(previous) = fields.insert(
             name.to_string(),
             Field {
@@ -184,44 +314,209 @@ fn read_fields(text: &str) -> Result<HashMap<String, Field>, PowerflowError> {
     Ok(fields)
 }
 
+/// The identifier at the start of `text`, or `""`.
+fn leading_identifier(text: &str) -> &str {
+    let end = text
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(text.len());
+    &text[..end]
+}
+
+/// Whether `text` (after a name) is `= …`, an assignment rather than a comparison.
+fn is_plain_assignment(text: &str) -> bool {
+    text.trim_start()
+        .strip_prefix('=')
+        .is_some_and(|after| !after.starts_with('='))
+}
+
+/// The output variable named by a `function` line, such as `mpc` in `function mpc = case14`.
+/// A version 1 file's `function [baseMVA, bus, gen, branch, …] = name` is reported as such.
+fn function_output(line: usize, statement: &str) -> Result<String, PowerflowError> {
+    let unsupported = || {
+        parse_error(
+            line,
+            format!("unsupported function line `{statement}`: it must return the case struct"),
+        )
+    };
+    let signature = statement["function".len()..].trim_start();
+    let (outputs, _) = signature.split_once('=').ok_or_else(unsupported)?;
+    let outputs = outputs.trim();
+    let names: Vec<&str> = outputs
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split([',', ' ', '\t'])
+        .filter(|name| !name.is_empty())
+        .collect();
+    if names.len() > 1 && names.iter().any(|name| VERSION_1_VARIABLES.contains(name)) {
+        return Err(PowerflowError::UnsupportedVersion {
+            found: "1".to_string(),
+        });
+    }
+    match names.as_slice() {
+        [name] if !name.is_empty() && leading_identifier(name) == *name => Ok(name.to_string()),
+        _ => Err(unsupported()),
+    }
+}
+
+/// If `statement` assigns to a field of `variable` (`variable.a = …` or `variable.a.b = …`),
+/// returns the field path and the byte offset just past the `=`.
+fn assignment_target<'a>(statement: &'a str, variable: &str) -> Option<(Vec<&'a str>, usize)> {
+    let mut rest = statement.strip_prefix(variable)?;
+    let mut path = Vec::new();
+    while let Some(after_dot) = rest.strip_prefix('.') {
+        let name = leading_identifier(after_dot);
+        if name.is_empty() {
+            return None;
+        }
+        path.push(name);
+        rest = &after_dot[name.len()..];
+    }
+    if path.is_empty() || !is_plain_assignment(rest) {
+        // Such as an indexed assignment, `mpc.bus(:, PD) = …`
+        return None;
+    }
+    let equals = statement.len() - rest.trim_start().len();
+    Some((path, equals + 1))
+}
+
 fn unsupported_statement(line: usize, statement: &str) -> PowerflowError {
     parse_error(
         line,
         format!(
-            "unsupported statement `{statement}`: only `mpc.<field> = <literal>;` assignments are \
-             supported, and this case file may compute its data with code"
+            "unsupported statement `{}`: only `mpc.<field> = <literal>;` assignments are \
+             supported, and this case file may compute its data with code",
+            statement.trim_end()
         ),
     )
 }
 
-/// Reads the literal starting at `rhs` on line `start`, which may continue over later lines.
-/// Returns the value and the index of the first line after it.
-fn read_literal(
-    lines: &[CodeLine],
-    start: usize,
-    rhs: &str,
-) -> Result<(Value, usize), PowerflowError> {
-    let number = lines[start].number;
-    if let Some(body) = rhs.strip_prefix('[') {
-        let (segments, rest, next) = collect_until(lines, start, body, ']')?;
-        expect_statement_end(lines[next - 1].number, rest)?;
-        return Ok((Value::Matrix(parse_matrix(&segments)?), next));
+/// Moves past whitespace and one optional `;` or `,` ending a statement at `cursor`, which must
+/// otherwise be at the end of its line.
+fn expect_statement_end(lines: &[CodeLine], cursor: Cursor) -> Result<Cursor, PowerflowError> {
+    let line = &lines[cursor.index];
+    let rest = &line.code[cursor.pos..];
+    let trimmed = rest.trim_start();
+    let at = cursor.pos + (rest.len() - trimmed.len());
+    if trimmed.is_empty() {
+        Ok(Cursor {
+            index: cursor.index + 1,
+            pos: 0,
+        })
+    } else if trimmed.starts_with([';', ',']) {
+        Ok(Cursor {
+            index: cursor.index,
+            pos: at + 1,
+        })
+    } else {
+        Err(parse_error(
+            line.number,
+            format!("unexpected `{}` after the literal", trimmed.trim_end()),
+        ))
     }
-    if let Some(body) = rhs.strip_prefix('{') {
-        let (segments, rest, next) = collect_until(lines, start, body, '}')?;
-        expect_statement_end(lines[next - 1].number, rest)?;
-        return Ok((Value::Cell(parse_cell(&segments)?), next));
+}
+
+/// Skips an expression assigned to a field the model doesn't use, through the `;` or `,` that
+/// ends it, or the end of its line. Brackets must balance, and inside them new lines don't
+/// end the statement.
+fn skip_expression(lines: &[CodeLine], start: Cursor) -> Result<Cursor, PowerflowError> {
+    let mut depth = 0usize;
+    let mut cursor = start;
+    loop {
+        let line = &lines[cursor.index];
+        let text = &line.code[cursor.pos..];
+        let mut unbalanced = false;
+        let found = find_code(text, |c| match c {
+            '(' | '[' | '{' => {
+                depth += 1;
+                false
+            }
+            ')' | ']' | '}' => match depth.checked_sub(1) {
+                Some(d) => {
+                    depth = d;
+                    false
+                }
+                None => {
+                    unbalanced = true;
+                    true
+                }
+            },
+            ';' | ',' => depth == 0,
+            _ => false,
+        })
+        .map_err(|_| parse_error(line.number, "string is never closed"))?;
+        if unbalanced {
+            return Err(parse_error(
+                line.number,
+                "closing bracket without an opening one",
+            ));
+        }
+        if let Some(i) = found {
+            return Ok(Cursor {
+                index: cursor.index,
+                pos: cursor.pos + i + 1,
+            });
+        }
+        if depth == 0 && !line.continued {
+            return Ok(Cursor {
+                index: cursor.index + 1,
+                pos: 0,
+            });
+        }
+        if cursor.index + 1 == lines.len() {
+            return Err(parse_error(
+                lines[start.index].number,
+                "this statement's brackets never close",
+            ));
+        }
+        cursor = Cursor {
+            index: cursor.index + 1,
+            pos: 0,
+        };
     }
-    if rhs.starts_with('\'') {
-        let (string, rest) = read_string(number, rhs)?;
-        expect_statement_end(number, rest)?;
-        return Ok((Value::Str(string), start + 1));
+}
+
+/// Reads the literal at `start` (just past the `=`), which may continue over later lines.
+/// Returns the value and the position just after it.
+fn read_literal(lines: &[CodeLine], start: Cursor) -> Result<(Value, Cursor), PowerflowError> {
+    let line = &lines[start.index];
+    let rest = &line.code[start.pos..];
+    let rhs = rest.trim_start();
+    let at = start.pos + (rest.len() - rhs.len());
+    if rhs.starts_with('[') || rhs.starts_with('{') {
+        let close = if rhs.starts_with('[') { ']' } else { '}' };
+        let body = Cursor {
+            index: start.index,
+            pos: at + 1,
+        };
+        let (segments, after) = collect_until(lines, body, close)?;
+        let value = if close == ']' {
+            Value::Matrix(parse_matrix(&segments)?)
+        } else {
+            Value::Cell(parse_cell(&segments)?)
+        };
+        return Ok((value, after));
+    }
+    if rhs.starts_with(['\'', '"']) {
+        let (string, after) = read_string(line.number, rhs)?;
+        let pos = at + (rhs.len() - after.len());
+        return Ok((
+            Value::Str(string),
+            Cursor {
+                index: start.index,
+                pos,
+            },
+        ));
     }
 
-    let (text, rest) = rhs.split_once(';').unwrap_or((rhs, ""));
-    expect_statement_end(number, rest)?;
-    let value = parse_number(number, text.trim(), "a scalar")?;
-    Ok((Value::Number(value), start + 1))
+    let token_len = rhs.find([';', ',']).unwrap_or(rhs.len());
+    let value = parse_number(line.number, rhs[..token_len].trim(), "a scalar")?;
+    Ok((
+        Value::Number(value),
+        Cursor {
+            index: start.index,
+            pos: at + token_len,
+        },
+    ))
 }
 
 /// A piece of a multi-line literal: its line, its text, and whether the line was continued
@@ -232,66 +527,49 @@ struct Segment<'a> {
     continued: bool,
 }
 
-/// Gathers a literal's body from `first` (the text after the opening bracket on line
-/// `start`) until the closing `close` outside quotes. Returns the body's segments, the text
-/// after the closing bracket, and the index of the line after the one it's on.
+/// Gathers a literal's body from `start` (just past the opening bracket) until the closing
+/// `close` outside strings. Returns the body's segments and the position just after `close`.
 fn collect_until<'a>(
     lines: &'a [CodeLine<'a>],
-    start: usize,
-    first: &'a str,
+    start: Cursor,
     close: char,
-) -> Result<(Vec<Segment<'a>>, &'a str, usize), PowerflowError> {
+) -> Result<(Vec<Segment<'a>>, Cursor), PowerflowError> {
     let mut segments = Vec::new();
-    let mut text = first;
-    let mut index = start;
+    let mut cursor = start;
     loop {
-        let line = &lines[index];
-        if let Some(end) = find_outside_quotes(text, close) {
+        let line = &lines[cursor.index];
+        let text = &line.code[cursor.pos..];
+        let found = find_code(text, |c| c == close)
+            .map_err(|_| parse_error(line.number, "string is never closed"))?;
+        if let Some(end) = found {
             segments.push(Segment {
                 line: line.number,
                 text: &text[..end],
                 continued: false,
             });
-            return Ok((segments, &text[end + 1..], index + 1));
+            return Ok((
+                segments,
+                Cursor {
+                    index: cursor.index,
+                    pos: cursor.pos + end + close.len_utf8(),
+                },
+            ));
         }
         segments.push(Segment {
             line: line.number,
             text,
             continued: line.continued,
         });
-        index += 1;
-        if index == lines.len() {
+        if cursor.index + 1 == lines.len() {
             return Err(parse_error(
-                lines[start].number,
+                lines[start.index].number,
                 format!("`{close}` never closes this literal"),
             ));
         }
-        text = lines[index].code;
-    }
-}
-
-fn find_outside_quotes(text: &str, target: char) -> Option<usize> {
-    let mut in_string = false;
-    for (i, c) in text.char_indices() {
-        match c {
-            '\'' => in_string = !in_string,
-            c if c == target && !in_string => return Some(i),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Checks that only an optional `;` and whitespace follow a literal.
-fn expect_statement_end(line: usize, rest: &str) -> Result<(), PowerflowError> {
-    let rest = rest.trim();
-    if rest.is_empty() || rest == ";" {
-        Ok(())
-    } else {
-        Err(parse_error(
-            line,
-            format!("unexpected `{rest}` after the literal"),
-        ))
+        cursor = Cursor {
+            index: cursor.index + 1,
+            pos: 0,
+        };
     }
 }
 
@@ -366,7 +644,7 @@ fn parse_cell(segments: &[Segment]) -> Result<Vec<String>, PowerflowError> {
             if rest.is_empty() {
                 break;
             }
-            if !rest.starts_with('\'') {
+            if !rest.starts_with(['\'', '"']) {
                 return Err(parse_error(
                     segment.line,
                     format!(
@@ -383,16 +661,20 @@ fn parse_cell(segments: &[Segment]) -> Result<Vec<String>, PowerflowError> {
     Ok(strings)
 }
 
-/// Reads a single-quoted string at the start of `text`, where `''` is an escaped quote.
-/// Returns the string and the text after its closing quote.
+/// Reads a single- or double-quoted string at the start of `text`, where a doubled quote is
+/// an escaped one. Returns the string and the text after its closing quote.
 fn read_string(line: usize, text: &str) -> Result<(String, &str), PowerflowError> {
+    let quote = text.chars().next().filter(|&c| c == '\'' || c == '"');
+    let Some(quote) = quote else {
+        return Err(parse_error(line, "expected a quoted string"));
+    };
     let body = &text[1..];
     let mut string = String::new();
     let mut chars = body.char_indices().peekable();
     while let Some((i, c)) = chars.next() {
-        if c == '\'' {
-            if matches!(chars.peek(), Some((_, '\''))) {
-                string.push('\'');
+        if c == quote {
+            if chars.peek().is_some_and(|&(_, next)| next == quote) {
+                string.push(quote);
                 chars.next();
             } else {
                 return Ok((string, &body[i + 1..]));
@@ -500,6 +782,24 @@ fn optional(values: &[f64], column: usize, default: f64) -> f64 {
     values.get(column).copied().unwrap_or(default)
 }
 
+/// Checks that the first `count` values of a row (the ones the model reads) aren't NaN. No
+/// MATPOWER case uses NaN, and one in, say, a reactance would only surface later as a
+/// confusing solver failure. `Inf` is allowed: limits use it.
+fn reject_nan(row: &Row, table: &str, count: usize) -> Result<(), PowerflowError> {
+    match row
+        .values
+        .iter()
+        .take(count)
+        .position(|value| value.is_nan())
+    {
+        Some(column) => Err(parse_error(
+            row.line,
+            format!("mpc.{table} column {} is NaN", column + 1),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Checks a row has at least `min` columns.
 fn require_columns(row: &Row, table: &str, min: usize) -> Result<(), PowerflowError> {
     if row.values.len() < min {
@@ -516,20 +816,27 @@ fn require_columns(row: &Row, table: &str, min: usize) -> Result<(), PowerflowEr
 }
 
 /// Converts a value that must be a whole number of at least `min`, such as a bus label.
+///
+/// The largest accepted value is 2^53 (or `usize::MAX` if smaller): past it an `f64` can't
+/// represent every whole number, so the value read may not be the one the file wrote, and a
+/// cast to `usize` would saturate rather than fail.
 fn whole(row: &Row, column: usize, what: &str, min: usize) -> Result<usize, PowerflowError> {
+    const MAX_EXACT: f64 = 9_007_199_254_740_992.0; // 2^53
+    let max = MAX_EXACT.min(usize::MAX as f64);
     let value = row.values[column];
-    if value.is_finite() && value.fract() == 0.0 && value >= min as f64 {
+    if value.is_finite() && value.fract() == 0.0 && value >= min as f64 && value <= max {
         Ok(value as usize)
     } else {
         Err(parse_error(
             row.line,
-            format!("{what} must be a whole number of at least {min}, not {value}"),
+            format!("{what} must be a whole number from {min} to {max}, not {value}"),
         ))
     }
 }
 
 fn bus_from_row(row: &Row) -> Result<Bus, PowerflowError> {
     require_columns(row, "bus", BUS_COLUMNS)?;
+    reject_nan(row, "bus", BUS_COLUMNS)?;
     let v = &row.values;
     let bus_type = BusType::from_code(v[1]).ok_or(PowerflowError::UnknownBusType {
         line: row.line,
@@ -555,6 +862,8 @@ fn bus_from_row(row: &Row) -> Result<Bus, PowerflowError> {
 
 fn gen_from_row(row: &Row) -> Result<Gen, PowerflowError> {
     require_columns(row, "gen", GEN_COLUMNS)?;
+    // Up to the 21 columns of the version 2 format, the ones read
+    reject_nan(row, "gen", 21)?;
     let v = &row.values;
     Ok(Gen {
         bus_label: whole(row, 0, "generator bus number", 1)?,
@@ -583,6 +892,7 @@ fn gen_from_row(row: &Row) -> Result<Gen, PowerflowError> {
 
 fn branch_from_row(row: &Row) -> Result<Branch, PowerflowError> {
     require_columns(row, "branch", BRANCH_COLUMNS)?;
+    reject_nan(row, "branch", 13)?;
     let v = &row.values;
     Ok(Branch {
         from_label: whole(row, 0, "branch from-bus number", 1)?,
@@ -609,29 +919,47 @@ fn gencost_from_row(row: &Row) -> Result<GenCost, PowerflowError> {
     let v = &row.values;
     let n = whole(row, 3, "gencost N", 1)?;
     let (startup, shutdown) = (v[1], v[2]);
-    match v[0] {
-        2.0 => {
-            require_columns(row, "gencost", 4 + n)?;
-            Ok(GenCost::Polynomial {
-                startup,
-                shutdown,
-                coeffs: v[4..4 + n].to_vec(),
-            })
+    // Values after the first four: N coefficients, or N (p, cost) pairs. Checked, since N
+    //   comes from the file and 4 + 2N could otherwise overflow
+    let values_per_point = match v[0] {
+        2.0 => 1,
+        1.0 => 2,
+        model => {
+            return Err(parse_error(
+                row.line,
+                format!("gencost model {model} is not 1 (piecewise linear) or 2 (polynomial)"),
+            ))
         }
-        1.0 => {
-            require_columns(row, "gencost", 4 + 2 * n)?;
-            Ok(GenCost::PiecewiseLinear {
-                startup,
-                shutdown,
-                points: v[4..4 + 2 * n]
-                    .chunks_exact(2)
-                    .map(|pair| (pair[0], pair[1]))
-                    .collect(),
-            })
+    };
+    let end = n
+        .checked_mul(values_per_point)
+        .and_then(|count| count.checked_add(4))
+        .filter(|&end| end <= v.len())
+        .ok_or_else(|| {
+            parse_error(
+                row.line,
+                format!(
+                    "gencost N is {n}, but the row has only {} values after the first four",
+                    v.len() - 4
+                ),
+            )
+        })?;
+    reject_nan(row, "gencost", end)?;
+    let values = &v[4..end];
+    Ok(if values_per_point == 1 {
+        GenCost::Polynomial {
+            startup,
+            shutdown,
+            coeffs: values.to_vec(),
         }
-        model => Err(parse_error(
-            row.line,
-            format!("gencost model {model} is not 1 (piecewise linear) or 2 (polynomial)"),
-        )),
-    }
+    } else {
+        GenCost::PiecewiseLinear {
+            startup,
+            shutdown,
+            points: values
+                .chunks_exact(2)
+                .map(|pair| (pair[0], pair[1]))
+                .collect(),
+        }
+    })
 }

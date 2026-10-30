@@ -523,3 +523,118 @@ fn optional_version_2_columns_default_like_matpower() {
         .1
         .contains("mpc.gen row has 9 columns, but needs at least 10"));
 }
+
+#[test]
+fn from_bytes_strips_a_utf8_byte_order_mark() {
+    let mut bytes = b"\xEF\xBB\xBF".to_vec();
+    bytes.extend_from_slice(Tiny::default().text().as_bytes());
+    assert_eq!(
+        Case::from_bytes(&bytes).unwrap(),
+        Tiny::default().parse().unwrap()
+    );
+}
+
+#[test]
+fn from_bytes_falls_back_to_latin1() {
+    // A file saved as Latin-1 or Windows-1252, as older MATLAB versions do: "Zürich" with ü
+    //   as the single byte 0xFC, which isn't valid UTF-8
+    let mut bytes = Tiny {
+        extra: "mpc.bus_name = { 'Z",
+        ..Tiny::default()
+    }
+    .text()
+    .into_bytes();
+    bytes.push(0xFC);
+    bytes.extend_from_slice(b"rich'; 'Bern' };\n% caf\xE9 in a comment\n");
+    let case = Case::from_bytes(&bytes).unwrap();
+    assert_eq!(
+        case.busnames.unwrap(),
+        vec!["Zürich".to_string(), "Bern".to_string()]
+    );
+
+    // Valid UTF-8 is read as UTF-8, not reinterpreted
+    let utf8 = Tiny {
+        extra: "mpc.bus_name = { 'Zürich'; 'Bern' };\n",
+        ..Tiny::default()
+    };
+    let case = Case::from_bytes(utf8.text().as_bytes()).unwrap();
+    assert_eq!(case.busnames.unwrap()[0], "Zürich");
+}
+
+#[test]
+fn oversized_whole_numbers_are_rejected_not_saturated() {
+    // 1e30 is a whole number as an f64, but casting it to usize would silently saturate to
+    //   usize::MAX; past 2^53 an f64 can't even represent every whole number
+    let huge_label = Tiny {
+        bus: "\t1e30\t3\t0\t0\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95;\n",
+        ..Tiny::default()
+    };
+    let (line, message) = parse_message(huge_label.parse());
+    assert_eq!(line, 5);
+    assert!(
+        message.contains("bus number must be a whole number from 1 to"),
+        "{message}"
+    );
+
+    // 2^53 itself is still accepted
+    let largest = Tiny {
+        bus: "\t9007199254740992\t3\t0\t0\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95;\n\
+              \t2\t1\t50\t10\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95;\n",
+        gen: "\t2\t0\t0\t100\t-100\t1\t100\t1\t200\t0;\n",
+        branch: "\t9007199254740992\t2\t0.01\t0.1\t0.02\t0\t0\t0\t0\t0\t1;\n",
+        ..Tiny::default()
+    }
+    .parse()
+    .unwrap();
+    assert_eq!(largest.bus[0].bus_label, 9_007_199_254_740_992);
+}
+
+#[test]
+fn gencost_n_larger_than_its_row_is_an_error() {
+    // An N past the end of the row, including one so large that 4 + 2N would overflow
+    for n in ["3", "4503599627370496", "9007199254740992"] {
+        let text = format!(
+            "{}mpc.gencost = [ 1 0 0 {n} 0 0 ];\n",
+            Tiny::default().text()
+        );
+        let (_, message) = parse_message(Case::parse(&text));
+        assert!(
+            message.contains(&format!("gencost N is {n}, but the row has only 2 values")),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn nan_in_a_read_column_is_rejected() {
+    // A NaN reactance would otherwise only surface as a failed solve
+    let case = Tiny {
+        branch: "\t1\t2\t0.01\tNaN\t0.02\t0\t0\t0\t0\t0\t1\t-360\t360;\n",
+        ..Tiny::default()
+    };
+    let (line, message) = parse_message(case.parse());
+    assert_eq!((line, message.as_str()), (12, "mpc.branch column 4 is NaN"));
+
+    let cost = format!(
+        "{}mpc.gencost = [ 2 0 0 2 NaN 0 ];\n",
+        Tiny::default().text()
+    );
+    assert!(parse_message(Case::parse(&cost))
+        .1
+        .contains("mpc.gencost column 5 is NaN"));
+
+    // Inf is legal (limits use it), and NaN in a column the model doesn't read is ignored
+    let ignored = Tiny {
+        bus: "\t1\t3\t0\t0\t0\t0\t1\t1\t0\t135\t1\tInf\t0.95\tNaN;\n\
+              \t2\t1\t50\t10\t0\t0\t1\t1\t0\t135\t1\t1.05\t0.95\tNaN;\n",
+        ..Tiny::default()
+    };
+    assert_eq!(ignored.parse().unwrap().bus[0].vmax_pu, f64::INFINITY);
+}
+
+#[test]
+fn a_case_needs_buses() {
+    let empty = "function mpc = empty\nmpc.version = '2';\nmpc.baseMVA = 100;\n\
+                 mpc.bus = [];\nmpc.gen = [];\nmpc.branch = [];\n";
+    assert_eq!(Case::parse(empty), Err(PowerflowError::NoBuses));
+}
