@@ -118,9 +118,10 @@ Merged in PR #2.
       disconnected generators and branches report 0.0, as `runpf.m` (lines 474–480) does,
       confirmed with `rundcpf`; isolated buses keep their angle and their load is not served.
       Cholesky falls back to LU when B′ isn't positive definite (negative reactances), which
-      14 of MATPOWER's cases need. **Found:** without a fill-reducing ordering the solve is
-      slow on large cases (case8387pegase 36 s, case13659pegase 166 s in release), which
-      Phase 3's orderings address.
+      19 of MATPOWER's 78 cases need. **Found:** without a fill-reducing ordering the solve is
+      slow on large cases (case13659pegase 89 s, case8387pegase 17 s in release; see
+      `docs/benchmarks/`), which Phase 3's orderings address. First recorded as 14 cases (of
+      65 surveyed), 166 s and 36 s, on a machine that wasn't recorded.
 - [x] Reference results: MATPOWER `rundcpf` outputs for case14, case30 and case118 checked into
       test data. Tests compare angles and flows within a stated tolerance. The results are
       generated and committed (`powerflow/tests/data/matpower-reference/`, by
@@ -130,7 +131,7 @@ Merged in PR #2.
       measured are 2.3e-13° and 3.6e-12 MW, on case118. The comparison first checks that the
       results describe the case (buses, branch ends and statuses, generators), and a test shows
       it fails on another case's results, a 1e-6 MW error or a NaN.
-- [ ] Benchmark harness (criterion) running DC power flow on the largest available case, so
+- [x] Benchmark harness (criterion) running DC power flow on the largest available case, so
       later phases have a baseline. Changed from the plan (decided): criterion benchmarks a
       medium case, since sampling the largest repeatedly is impractical without a
       fill-reducing ordering (nine cases took over 20 s each in a first pass), and a survey
@@ -142,7 +143,15 @@ Merged in PR #2.
             (two runs; the machine varies by about 4% between runs). Its numbering suits an
             unordered factorization badly, so Phase 3's orderings will show: the Cholesky factor
             has 40 times the entries of B′'s lower triangle.
-      - [ ] Survey of every MATPOWER case, with the results recorded.
+      - [x] Survey of every MATPOWER case, with the results recorded in
+            `docs/benchmarks/dc-power-flow-2026-10-31.md`. `scripts/benchmark-dc.sh` runs the
+            `dc_survey` example on each case in its own process, under a time and memory limit,
+            and compares the results with MATPOWER's, generated locally by
+            `scripts/generate-reference.sh`, which now takes an output directory and cases. All
+            78 cases solve in 18 minutes and agree with MATPOWER to within 1.1e-10 of each
+            quantity's largest value in its case. Run time follows fill-in, not size: unordered
+            factors hold up to 109 times the entries they would without fill-in, and LU, which
+            19 cases need, costs about four times Cholesky at similar fill.
 
 ## Phase 2: Fixed-pattern `CsrMatrix`
 
@@ -201,7 +210,8 @@ Merged in PR #2.
 - [ ] Fast-decoupled power flow (XB and BX variants), which factors B′ and B″ once.
 - [ ] Validation against MATPOWER `runpf` for case14, case30, case118 and a large case such as
       case2383wp: voltage magnitudes, angles and branch flows within a stated tolerance.
-- [ ] Benchmarks against the Phase 1.5 baseline.
+- [ ] Benchmarks against the Phase 1.5 baseline (`docs/benchmarks/`; rerun its tools on the same
+      machine to compare).
 
 ## Phase 5: DC studies
 
