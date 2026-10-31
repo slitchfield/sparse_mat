@@ -131,7 +131,18 @@ Merged in PR #2.
       results describe the case (buses, branch ends and statuses, generators), and a test shows
       it fails on another case's results, a 1e-6 MW error or a NaN.
 - [ ] Benchmark harness (criterion) running DC power flow on the largest available case, so
-      later phases have a baseline.
+      later phases have a baseline. Changed from the plan (decided): criterion benchmarks a
+      medium case, since sampling the largest repeatedly is impractical without a
+      fill-reducing ordering (nine cases took over 20 s each in a first pass), and a survey
+      times every case once.
+      - [x] Criterion harness, `powerflow/benches/dc_power_flow.rs`, on case2383wp (2,383
+            buses), the benchmark case named in the reference data's README. It times parsing,
+            the model (which Phase 2 targets) and the solve (which Phase 3 targets) separately.
+            Baseline on the maintainer's machine: parse 2.3 ms, model 0.50 ms, solve 317–330 ms
+            (two runs; the machine varies by about 4% between runs). Its numbering suits an
+            unordered factorization badly, so Phase 3's orderings will show: the Cholesky factor
+            has 40 times the entries of B′'s lower triangle.
+      - [ ] Survey of every MATPOWER case, with the results recorded.
 
 ## Phase 2: Fixed-pattern `CsrMatrix`
 
