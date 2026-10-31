@@ -117,8 +117,8 @@ rest. This report covers the whole branch.
 - **`powerflow`:** 94 tests, from 62. `dc_model_test.rs` has 13 (the earlier session's 12, plus
   the validation test), `dc_solve_test.rs` 15 and `dc_reference_test.rs` 4. The other 62 are
   unchanged: 23 data model, 18 locator, 4 fuzz, 8 syntax and 9 normalized cases.
-- **The benchmark** runs once as a test under `cargo test --all-targets`, which takes about 6 s
-  per pass in debug until Phase 3 makes the solve fast.
+- **The benchmark** runs once as a test under `cargo test --all-targets`. In debug that takes
+  about 6 s per pass locally and 10.5 s on CI's runners, until Phase 3 makes the solve fast.
 - **`sparse_mat`:** unchanged.
 
 ## Verification
@@ -130,7 +130,10 @@ rest. This report covers the whole branch.
 - **The survey's limits:** the time limit was exercised by a first pass at 20 s per case, which
   9 cases hit; the error path on a case that doesn't exist; and the memory limit by hand, at
   256 MiB.
-- **Not yet verified:** CI on this pull request.
+- **CI:** Check, MSRV and Dependencies pass on this pull request, on both its push and pull
+  request runs, so `cargo-deny` accepts criterion's dependencies. The Check logs show the
+  reference tests and the benchmark's test runs in all four passes, with nothing skipped; the
+  MSRV log shows the benchmark skipping, since that job doesn't fetch MATPOWER.
 
 ## Mistakes caught
 
@@ -154,9 +157,13 @@ rest. This report covers the whole branch.
   factor size and agreement with MATPOWER, case2383wp included. I read the license decision
   ("nothing derived from case2383wp is committed") as covering case data and results, not facts
   like these, which reveal nothing about the grid. Say if you'd rather drop those rows.
-- **CI time.** The benchmark's test-mode run adds about 6 s to each of the four test passes in
-  `check.sh`, until Phase 3 makes the solve fast: case2383wp's solve takes 5.0 s in a debug
-  build. case_ACTIVSg2000's takes 0.44 s, but it would show less of Phase 3's gains.
+- **CI time.** The benchmark's test-mode run takes about 10.5 s in each of the four test passes
+  in CI's `check.sh` step, about 42 s per Check run, until Phase 3 makes the solve fast. This
+  pull request's Check runs took 3m51s and 3m55s, against 1m36s for this branch before this
+  session's commits. One run can't separate the rest: new targets compiled after only a partial
+  cache hit, and runners vary (PR #13's two Check runs took 1m35s and 2m30s). The obvious
+  alternative case, case_ACTIVSg2000, solves in 0.44 s in a local debug build, against
+  case2383wp's 5.0 s, but it would show less of Phase 3's gains.
 - **`DcSolver::None`** hides `Option::None` wherever someone writes `use DcSolver::*`. A name
   such as `NoSolve` would avoid that. Not changed, since it's an API decision.
 
