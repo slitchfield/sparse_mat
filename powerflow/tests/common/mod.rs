@@ -42,6 +42,8 @@
 
 /// Hand-built cases for the DC power flow tests.
 pub mod dc_fixture;
+/// MATPOWER's DC power flow results, to compare against.
+pub mod reference;
 
 use std::env;
 use std::fs;

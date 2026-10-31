@@ -121,10 +121,15 @@ Merged in PR #2.
       14 of MATPOWER's cases need. **Found:** without a fill-reducing ordering the solve is
       slow on large cases (case8387pegase 36 s, case13659pegase 166 s in release), which
       Phase 3's orderings address.
-- [ ] Reference results: MATPOWER `rundcpf` outputs for case14, case30 and case118 checked into
+- [x] Reference results: MATPOWER `rundcpf` outputs for case14, case30 and case118 checked into
       test data. Tests compare angles and flows within a stated tolerance. The results are
       generated and committed (`powerflow/tests/data/matpower-reference/`, by
       `scripts/generate-reference.sh`); the comparison tests come with the DC power flow.
+      Done in `powerflow/tests/dc_reference_test.rs`, which also compares generator outputs.
+      Angles, flows and outputs agree within 1e-9 (degrees, MW); the largest differences
+      measured are 2.3e-13° and 3.6e-12 MW, on case118. The comparison first checks that the
+      results describe the case (buses, branch ends and statuses, generators), and a test shows
+      it fails on another case's results, a 1e-6 MW error or a NaN.
 - [ ] Benchmark harness (criterion) running DC power flow on the largest available case, so
       later phases have a baseline.
 
