@@ -1,8 +1,9 @@
 # Implementation report: `dev/dc-power-flow`
 
 This branch adds the DC power flow and finishes Phase 1.5: the model, the solve, the comparison
-with MATPOWER's results, and benchmarks. It has eight commits on top of `main` at `b7b2f36`. The
-first two are from an earlier session, which ended before writing a report. This session
+with MATPOWER's results, and benchmarks. It has seven commits on top of `main` at `b7b2f36`,
+then this report and its corrections. The first two are from an earlier session, which ended
+before writing a report. This session
 reviewed them against MATPOWER's source, fixed the one problem the review found, and added the
 rest. This report covers the whole branch.
 
@@ -11,7 +12,7 @@ rest. This report covers the whole branch.
 | `powerflow` tests | 62 | 94 (adds 13 DC model, 15 DC solve and 4 reference comparison) |
 | MATPOWER 8.1 cases the DC power flow solves | none | all 78, within 1.1e-10 of MATPOWER's results relative to each quantity's largest value |
 | Benchmarks | none | criterion on case2383wp, and a recorded survey of all 78 cases |
-| Diff | | 21 files, +2,191 / −24: 481 lines of library code, 875 of tests, 356 of benchmark code, scripts and manifest, and 479 of documentation |
+| Diff, without this report | | 20 files, +2,024 / −24: 481 lines of library code, 875 of tests, 356 of benchmark code, scripts and manifest, and 312 of documentation |
 
 ## Commits
 
@@ -24,7 +25,7 @@ rest. This report covers the whole branch.
 | `0e31586` | Criterion benchmarks on case2383wp |
 | `da2b907` | A survey of every MATPOWER case, and the recorded results |
 | `97a1648` | The README |
-| (this commit) | This report |
+| `4fd2918` and later | This report, and corrections to its figures |
 
 ## How the work was driven
 
@@ -147,6 +148,9 @@ rest. This report covers the whole branch.
   and 166 s for case8387pegase and case13659pegase. The survey finds 19 of 78 cases, 17 s and
   89 s. The earlier count covered 65 cases, and its machine wasn't recorded. The checklist is
   corrected.
+- **A local figure given as CI's:** the report first said the benchmark's test runs cost CI
+  about 6 s per pass, which I'd measured locally. CI's logs show about 10.5 s, so I corrected it
+  after the first CI run.
 - **A survey rerun:** I first surveyed without factor sizes. Once the timings showed that
   fill-in drives the cost, I added them and reran the survey, so that the committed tool
   reproduces the record.
