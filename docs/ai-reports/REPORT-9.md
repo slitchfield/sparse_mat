@@ -1,0 +1,167 @@
+# Implementation report: `dev/dc-power-flow`
+
+This branch adds the DC power flow and finishes Phase 1.5: the model, the solve, the comparison
+with MATPOWER's results, and benchmarks. It has eight commits on top of `main` at `b7b2f36`. The
+first two are from an earlier session, which ended before writing a report. This session
+reviewed them against MATPOWER's source, fixed the one problem the review found, and added the
+rest. This report covers the whole branch.
+
+| | `main` | `dev/dc-power-flow` |
+|---|---|---|
+| `powerflow` tests | 62 | 94 (adds 13 DC model, 15 DC solve and 4 reference comparison) |
+| MATPOWER 8.1 cases the DC power flow solves | none | all 78, within 1.1e-10 of MATPOWER's results relative to each quantity's largest value |
+| Benchmarks | none | criterion on case2383wp, and a recorded survey of all 78 cases |
+| Diff | | 21 files, +2,191 / −24: 481 lines of library code, 875 of tests, 356 of benchmark code, scripts and manifest, and 479 of documentation |
+
+## Commits
+
+| Commit | Change |
+|---|---|
+| `6484fd3` | The DC model: Bbus, Bf and phase-shifter injections (earlier session) |
+| `35c3cc3` | The DC solve: angles, branch flows and slack generation (earlier session) |
+| `7036a35` | Validates the case before building the model, a fix from this session's review |
+| `eec0722` | Compares case14, case30 and case118 with MATPOWER's committed results |
+| `0e31586` | Criterion benchmarks on case2383wp |
+| `da2b907` | A survey of every MATPOWER case, and the recorded results |
+| `97a1648` | The README |
+| (this commit) | This report |
+
+## How the work was driven
+
+1. **Review before building on it.** The earlier session's two commits were checked against
+   MATPOWER 8.1's `makeBdc.m`, `dcpf.m` and `runpf.m`, then probed with invalid cases, which
+   found the validation gap.
+2. **Measured tolerances.** The reference tests' tolerance was set after measuring the actual
+   differences, and states them.
+3. **Measurements over inferences in the benchmarks.** A first pass at 20 s per case checked the
+   tools and informed the choice of benchmark case. Claims about fill-in rest on counted factor
+   entries, and the survey was rerun with the final tool so that the committed tool reproduces
+   the record.
+
+## Details
+
+### The DC power flow (`6484fd3`, `35c3cc3`, earlier session)
+
+- **The model,** `DcModel::new`: MATPOWER's `makeBdc` after `ext2int`'s eliminations (isolated
+  buses, out-of-service generators and branches, and those touching an isolated bus). Branch
+  stamps go through `from_triplets`, so parallel branches sum, and each branch's two
+  off-diagonal stamps are pushed together, so Bbus is exactly symmetric, as `cholesky` requires.
+  Bus roles follow `bustypes`, with several reference buses allowed.
+- **The solve,** `DcModel::solve` and `dc_power_flow`: the injections and solve of `runpf` and
+  `dcpf`, with the slack taken by the first in-service generator at each reference bus. Results
+  are in case-table order, with 0.0 for out-of-service elements, as `runpf` reports them. B′ is
+  solved by Cholesky, falling back to LU when it isn't positive definite, and
+  `DcSolution::solver` records which.
+- **Errors:** `ZeroReactance`, `NoReferenceBus`, `IslandWithoutReference` (found by a
+  breadth-first search, not left to a factorization that rounding can fool), `SingularNetwork`
+  and `CaseMismatch`.
+- **Tests:** 27 on hand-built fixtures with hand-computed results, covering what the reference
+  cases can't: phase shifters, shunt conductance, isolated buses, out-of-service elements,
+  several reference buses, the LU fallback and the errors. Each solution's physics is checked
+  too: branch equations, and power balance at every bus.
+
+### The review, and its fix (`7036a35`)
+
+- **Against MATPOWER's source:** the susceptance, tap and phase-shifter formulas (`makeBdc.m`
+  lines 64–86), the 1e5 failure threshold (`dcpf.m` line 24), the slack (`runpf.m` lines
+  224–229) and the zeroed results (lines 474–480) all match.
+- **One problem:** `DcModel::new` trusted the case to be valid, but only `Case::parse`
+  validates, and `Case`'s fields are public. A probe on case14:
+
+| Edit | Before | After |
+|---|---|---|
+| A generator moved to bus 999 | `Ok`, with its 40 MW silently moved onto the slack | `UnknownBus` |
+| Bus 14 relabelled 1 | `IslandWithoutReference` at bus 1, the reference bus | `DuplicateBus` |
+| `baseMVA` of 0 | `SingularNetwork` | `InvalidBaseMva` |
+
+- **The fix:** `DcModel::new` runs `Case::validate` first, as its doc comment now states. The
+  new test fails without the fix.
+
+### Comparison with MATPOWER (`eec0722`)
+
+- **The tests:** `tests/dc_reference_test.rs` compares angles, flows and generator outputs for
+  case14, case30 and case118 with the committed `rundcpf` results. The largest differences
+  measured are 2.3e-13° and 3.6e-12 MW (case118), and the stated tolerance is 1e-9.
+- **Shared code:** the reader and the comparison are in `tests/common/reference.rs`, so the
+  survey uses them too. The comparison first checks that the results describe the case, and
+  treats a NaN difference as a failure, which `f64::max` would skip. A test shows it rejects
+  another case's results, a 1e-6 MW error and a NaN.
+
+### Benchmarks (`0e31586`, `da2b907`)
+
+- **Criterion,** `benches/dc_power_flow.rs`, times parsing, the model and the solve separately
+  on case2383wp: 2.3 ms, 0.50 ms and 317–330 ms. Chosen because the reference data's README
+  already names it as the benchmark case, it parses straight from MATPOWER's files, it has 6
+  phase shifters, and its numbering suits an unordered factorization badly. Its Cholesky factor
+  holds 40 times the entries of B′'s lower triangle, against 13 times for the similarly sized
+  case_ACTIVSg2000, so Phase 3's gains will show.
+- **The survey:** `examples/dc_survey.rs` and `scripts/benchmark-dc.sh` run every case in its
+  own process, under a time and a memory limit. They compare its results with MATPOWER's,
+  generated locally by `scripts/generate-reference.sh <dir> <case>...`, which are never
+  committed. The record, `docs/benchmarks/dc-power-flow-2026-10-31.md`, found:
+  - all 78 cases solve, in 18 minutes, within 1.1e-10 of MATPOWER relative to each quantity's
+    largest value
+  - 59 by Cholesky and 19 by LU, which all have negative series susceptances
+  - run time follows fill-in, not size: unordered factors hold up to 109 times the entries
+    they would without fill-in, and case_ACTIVSg10k solves in 1.2 s where the similarly sized
+    case9241pegase takes 74 s
+  - for Phase 3: a fill-reducing ordering is the main gain; LU costs about four times Cholesky
+    at similar fill, and its pivot search visits every remaining row at every step; the failed
+    Cholesky attempt before LU costs nothing
+- **Octave versions:** with no arguments, `generate-reference.sh` regenerates the committed
+  results byte for byte under Octave 8.4. That settles the handoff's open question about the
+  6.4 they were made with.
+
+## Tests
+
+- **`powerflow`:** 94 tests, from 62. `dc_model_test.rs` has 13 (the earlier session's 12, plus
+  the validation test), `dc_solve_test.rs` 15 and `dc_reference_test.rs` 4. The other 62 are
+  unchanged: 23 data model, 18 locator, 4 fuzz, 8 syntax and 9 normalized cases.
+- **The benchmark** runs once as a test under `cargo test --all-targets`, which takes about 6 s
+  per pass in debug until Phase 3 makes the solve fast.
+- **`sparse_mat`:** unchanged.
+
+## Verification
+
+- **Locally:** `./check.sh` with `YBUS_REQUIRE_CASES=1`, the Rust 1.87 build and tests, and
+  `cargo doc` with warnings as errors all pass. `cargo-deny` isn't installed locally; instead,
+  `cargo metadata` shows that all 60 packages in the resolved graph, criterion's included, have
+  licenses the allow list accepts.
+- **The survey's limits:** the time limit was exercised by a first pass at 20 s per case, which
+  9 cases hit; the error path on a case that doesn't exist; and the memory limit by hand, at
+  256 MiB.
+- **Not yet verified:** CI on this pull request.
+
+## Mistakes caught
+
+- **A misreported status:** in this session's first review, my wrapper around `check.sh`
+  reported `tail`'s exit status rather than the script's. The log showed it had passed; later
+  runs record the script's own status.
+- **A check that tested nothing:** I ran the reference tests with `MATPOWER_DIR` empty to see
+  them skip, but the locator still found the fetched cases. I didn't count it as verification;
+  CI's MSRV job, which has no MATPOWER, exercises the skip.
+- **Stale figures from the earlier session:** the checklist said 14 cases need LU, and gave 36 s
+  and 166 s for case8387pegase and case13659pegase. The survey finds 19 of 78 cases, 17 s and
+  89 s. The earlier count covered 65 cases, and its machine wasn't recorded. The checklist is
+  corrected.
+- **A survey rerun:** I first surveyed without factor sizes. Once the timings showed that
+  fill-in drives the cost, I added them and reran the survey, so that the committed tool
+  reproduces the record.
+
+## Decide
+
+- **Case facts in the record.** `docs/benchmarks/` names every case with its size, timings,
+  factor size and agreement with MATPOWER, case2383wp included. I read the license decision
+  ("nothing derived from case2383wp is committed") as covering case data and results, not facts
+  like these, which reveal nothing about the grid. Say if you'd rather drop those rows.
+- **CI time.** The benchmark's test-mode run adds about 6 s to each of the four test passes in
+  `check.sh`, until Phase 3 makes the solve fast: case2383wp's solve takes 5.0 s in a debug
+  build. case_ACTIVSg2000's takes 0.44 s, but it would show less of Phase 3's gains.
+- **`DcSolver::None`** hides `Option::None` wherever someone writes `use DcSolver::*`. A name
+  such as `NoSolve` would avoid that. Not changed, since it's an API decision.
+
+## Next
+
+Phase 2 (a fixed-pattern `CsrMatrix`) and Phase 3 (a Gilbert–Peierls LU with orderings and
+refactorization). The survey shows where Phase 3's gains are: a fill-reducing ordering for the
+PEGASE and RTE cases, and a pivot search that only looks at nonzeros for the largest cases.
