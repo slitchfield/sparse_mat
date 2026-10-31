@@ -236,3 +236,41 @@ fn island_without_reference_is_an_error() {
     tables.1.push(G(5, 20.0, true));
     assert_eq!(model(&tables).unwrap().ref_buses(), [0, 4]);
 }
+
+#[test]
+fn an_edited_case_is_validated() {
+    // Only parsing validates, so these edits reach the model unchecked. Without the model's
+    //   own check, an unknown label silently dropped its generator (case14 then solved with
+    //   one generator's 40 MW missing), and a duplicate one gave a misleading island error.
+    let tables = triangle();
+    let valid = fixture(&tables.0, &tables.1, &tables.2);
+
+    let mut case = valid.clone();
+    case.generator[0].bus_label = 99;
+    assert_eq!(
+        DcModel::new(&case).unwrap_err(),
+        PowerflowError::UnknownBus {
+            table: "gen",
+            row: 1,
+            label: 99
+        }
+    );
+
+    let mut case = valid.clone();
+    case.bus[2].bus_label = 1;
+    assert_eq!(
+        DcModel::new(&case).unwrap_err(),
+        PowerflowError::DuplicateBus {
+            label: 1,
+            first_row: 1,
+            second_row: 3
+        }
+    );
+
+    let mut case = valid;
+    case.base_mva = 0.0;
+    assert_eq!(
+        DcModel::new(&case).unwrap_err(),
+        PowerflowError::InvalidBaseMva { base_mva: 0.0 }
+    );
+}

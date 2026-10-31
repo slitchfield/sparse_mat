@@ -64,11 +64,17 @@ impl DcModel {
     /// in-service generator, and is otherwise treated as PQ. With no REF bus, the first PV bus
     /// becomes the reference. A case may have several reference buses.
     ///
-    /// Returns `PowerflowError::ZeroReactance` for an in-service branch with `x == 0`,
+    /// Validates `case` first with [`Case::validate`], returning its errors: the model looks
+    /// buses up by label, so an unknown label would silently drop a generator or branch, and a
+    /// duplicate one would attach it to the wrong bus. Then returns
+    /// `PowerflowError::ZeroReactance` for an in-service branch with `x == 0`,
     /// `NoReferenceBus` if no bus can be the reference, and `IslandWithoutReference` if some
     /// connected bus can't reach a reference bus through in-service branches, which would make
     /// the solve singular.
     pub fn new(case: &Case) -> Result<DcModel, PowerflowError> {
+        // Only Case::parse validates, so a case edited since needs checking here
+        case.validate()?;
+
         // ext2int: connected buses, in case order, and the label → internal index map
         let bus_rows: Vec<usize> = (0..case.bus.len())
             .filter(|&row| case.bus[row].bus_type != BusType::Isolated)

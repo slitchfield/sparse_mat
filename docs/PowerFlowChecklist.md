@@ -109,6 +109,9 @@ Merged in PR #2.
       reach a reference bus is found by a breadth-first search and reported by bus
       (`IslandWithoutReference`), rather than left to a singular factorization, which rounding
       can hide. Zero reactance is an error (`ZeroReactance`), where MATPOWER gives `Inf`.
+      The case is validated first, since only `Case::parse` validates: in a review, a case
+      edited after parsing with an unknown generator bus label solved with that generator
+      silently dropped.
 - [x] DC power flow: drop the slack row and column with `select`, solve B′θ = P with
       `cholesky`, then compute branch flows. `DcModel::solve` and `dc_power_flow`, following
       `runpf` and `dcpf`; results indexed in case-table order (decided). Out-of-service and
